@@ -1,0 +1,1286 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Omega 7 — Monitoração de Clientes</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+<!-- Firebase SDK -->
+<script type="module">
+  import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
+  import { getFirestore, doc, getDoc, setDoc, serverTimestamp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
+
+  const firebaseConfig = {
+    apiKey: "AIzaSyBZLoyZzC258WHnfNL0Y8952f1hIcHU6Wk",
+    authDomain: "dashboard-omega7.firebaseapp.com",
+    projectId: "dashboard-omega7",
+    storageBucket: "dashboard-omega7.firebasestorage.app",
+    messagingSenderId: "188973028311",
+    appId: "1:188973028311:web:767df317d07d46eff13192"
+  };
+
+  const app = initializeApp(firebaseConfig);
+  const db  = getFirestore(app);
+
+  // ── Expõe funções ao escopo global ──
+  window.__firebase = {
+
+    async carregar() {
+      try {
+        const snap = await getDoc(doc(db, 'omega7', 'dashboard'));
+        if (snap.exists()) {
+          return snap.data();
+        }
+        return null;
+      } catch (err) {
+        console.error('[Firebase] Erro ao carregar:', err);
+        throw err;
+      }
+    },
+
+    async salvar(payload) {
+      try {
+        await setDoc(doc(db, 'omega7', 'dashboard'), {
+          ...payload,
+          updatedAt: serverTimestamp()
+        });
+      } catch (err) {
+        console.error('[Firebase] Erro ao salvar:', err);
+        throw err;
+      }
+    }
+  };
+
+  // Resolve a promise que o script clássico está aguardando
+  if (window.__firebaseResolve) {
+    window.__firebaseResolve();
+  } else {
+    window.__firebaseReady = true; // módulo carregou antes do listener
+  }
+</script>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;600&display=swap');
+
+  :root {
+    --bg: #0d1117;
+    --surface: #161b22;
+    --card: #1c2128;
+    --border: #2d333b;
+    --text: #e6edf3;
+    --muted: #8b949e;
+    --gain: #3fb950;
+    --gain-bg: rgba(63,185,80,0.1);
+    --loss: #f85149;
+    --loss-bg: rgba(248,81,73,0.1);
+    --accent: #58a6ff;
+    --accent2: #d2a8ff;
+    --warn: #e3b341;
+    --warn-bg: rgba(227,179,65,0.12);
+    --apr: #58a6ff;
+    --may: #d2a8ff;
+    --jun: #3fb950;
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: 'Inter', sans-serif;
+    font-size: 14px;
+    line-height: 1.5;
+    min-height: 100vh;
+  }
+
+  /* ── TABS ── */
+  .tab-bar {
+    display: flex;
+    align-items: center;
+    background: var(--surface);
+    border-bottom: 1px solid var(--border);
+    padding: 0 24px;
+    gap: 4px;
+  }
+  .tab-brand {
+    font-size: 13px;
+    font-weight: 700;
+    color: var(--accent);
+    letter-spacing: -0.3px;
+    padding-right: 20px;
+    border-right: 1px solid var(--border);
+    margin-right: 8px;
+    white-space: nowrap;
+  }
+  .tab-btn {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 12px 16px;
+    border: none;
+    background: transparent;
+    color: var(--muted);
+    font-size: 13px;
+    font-weight: 500;
+    cursor: pointer;
+    border-bottom: 2px solid transparent;
+    transition: all 0.15s;
+    white-space: nowrap;
+    font-family: 'Inter', sans-serif;
+  }
+  .tab-btn:hover { color: var(--text); }
+  .tab-btn.active { color: var(--text); border-bottom-color: var(--accent); }
+  .tab-icon { font-size: 14px; }
+
+  /* ── PANELS ── */
+  .tab-panel { display: none; padding: 24px; }
+  .tab-panel.active { display: block; }
+
+  /* ── DASHBOARD PANEL ── */
+  .header {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    margin-bottom: 24px;
+    gap: 16px;
+    flex-wrap: wrap;
+  }
+  .header-left h1 { font-size: 20px; font-weight: 700; letter-spacing: -0.5px; }
+  .header-left p { color: var(--muted); font-size: 12px; margin-top: 2px; }
+  .badge {
+    display: inline-flex; align-items: center; gap: 6px;
+    padding: 5px 13px; border-radius: 20px; font-size: 12px;
+    font-weight: 600; font-family: 'JetBrains Mono', monospace;
+  }
+  .badge-gain { background: var(--gain-bg); color: var(--gain); border: 1px solid rgba(63,185,80,0.3); }
+
+  .dot { width: 8px; height: 8px; border-radius: 50%; display: inline-block; }
+  .dot-apr { background: var(--apr); } .dot-may { background: var(--may); } .dot-jun { background: var(--jun); }
+  .legend { display: flex; gap: 18px; align-items: center; margin-bottom: 20px; flex-wrap: wrap; }
+  .legend-item { display: flex; align-items: center; gap: 6px; font-size: 12px; color: var(--muted); font-weight: 500; }
+
+  .kpi-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(178px, 1fr)); gap: 12px; margin-bottom: 24px; }
+  .kpi-card { background: var(--card); border: 1px solid var(--border); border-radius: 10px; padding: 16px; }
+  .kpi-label { font-size: 10px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.8px; color: var(--muted); margin-bottom: 6px; }
+  .kpi-value { font-size: 21px; font-weight: 700; font-family: 'JetBrains Mono', monospace; line-height: 1; }
+  .kpi-sub { font-size: 11px; color: var(--muted); margin-top: 4px; }
+  .kpi-delta { font-size: 11px; font-weight: 600; font-family: 'JetBrains Mono', monospace; margin-top: 4px; }
+  .up { color: var(--gain); } .down { color: var(--loss); }
+
+  .charts-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-bottom: 20px; }
+  @media (max-width: 900px) { .charts-grid { grid-template-columns: 1fr; } }
+  .chart-card { background: var(--card); border: 1px solid var(--border); border-radius: 10px; padding: 18px; }
+  .chart-title { font-size: 13px; font-weight: 600; color: var(--text); margin-bottom: 3px; }
+  .chart-sub { font-size: 11px; color: var(--muted); margin-bottom: 14px; }
+  .chart-wrap { position: relative; height: 240px; }
+
+  .table-card { background: var(--card); border: 1px solid var(--border); border-radius: 10px; overflow: hidden; margin-bottom: 20px; }
+  .table-header { padding: 14px 18px; border-bottom: 1px solid var(--border); display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+  .table-header h3 { font-size: 13px; font-weight: 600; }
+  .filter-btns { display: flex; gap: 6px; flex-wrap: wrap; }
+  .filter-btn { padding: 4px 11px; border-radius: 6px; font-size: 11px; font-weight: 600; cursor: pointer; border: 1px solid var(--border); background: transparent; color: var(--muted); transition: all 0.15s; font-family: 'Inter', sans-serif; }
+  .filter-btn:hover { color: var(--text); }
+  .filter-btn.active { background: var(--accent); color: #fff; border-color: var(--accent); }
+  .filter-btn.active-loss { background: var(--loss); color: #fff; border-color: var(--loss); }
+  .filter-btn.active-gain { background: var(--gain); color: #fff; border-color: var(--gain); }
+  .tbl-wrap { overflow-x: auto; }
+  table { width: 100%; border-collapse: collapse; font-size: 12px; }
+  thead th { background: var(--surface); padding: 9px 14px; text-align: right; font-weight: 600; font-size: 10px; text-transform: uppercase; letter-spacing: 0.6px; color: var(--muted); white-space: nowrap; border-bottom: 1px solid var(--border); }
+  thead th:first-child { text-align: left; }
+  tbody tr { border-bottom: 1px solid rgba(45,51,59,0.5); transition: background 0.1s; }
+  tbody tr:hover { background: rgba(88,166,255,0.04); }
+  tbody tr:last-child { border-bottom: none; }
+  td { padding: 9px 14px; text-align: right; white-space: nowrap; }
+  td:first-child { text-align: left; font-weight: 500; max-width: 200px; overflow: hidden; text-overflow: ellipsis; }
+  .cres-cell { font-family: 'JetBrains Mono', monospace; font-weight: 600; font-size: 11px; padding: 2px 7px; border-radius: 5px; display: inline-block; }
+  .cres-up { color: var(--gain); background: var(--gain-bg); }
+  .cres-down { color: var(--loss); background: var(--loss-bg); }
+  .cres-neutral { color: var(--warn); background: var(--warn-bg); }
+
+  .footer { text-align: center; font-size: 11px; color: var(--muted); padding-top: 8px; padding-bottom: 4px; }
+
+  /* ── UPLOAD PANEL ── */
+  .upload-wrap {
+    max-width: 680px;
+    margin: 0 auto;
+  }
+  .upload-title { font-size: 18px; font-weight: 700; margin-bottom: 6px; }
+  .upload-desc { color: var(--muted); font-size: 13px; margin-bottom: 28px; line-height: 1.6; }
+
+  .drop-zone {
+    border: 2px dashed var(--border);
+    border-radius: 14px;
+    padding: 52px 32px;
+    text-align: center;
+    cursor: pointer;
+    transition: all 0.2s;
+    background: var(--card);
+    position: relative;
+  }
+  .drop-zone:hover, .drop-zone.drag-over {
+    border-color: var(--accent);
+    background: rgba(88,166,255,0.04);
+  }
+  .drop-icon { font-size: 40px; margin-bottom: 12px; }
+  .drop-main { font-size: 15px; font-weight: 600; color: var(--text); margin-bottom: 6px; }
+  .drop-sub { font-size: 12px; color: var(--muted); }
+  .drop-sub span { color: var(--accent); cursor: pointer; text-decoration: underline; }
+  #fileInput { position: absolute; inset: 0; opacity: 0; cursor: pointer; width: 100%; height: 100%; }
+
+  .file-info {
+    display: none;
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 14px 18px;
+    margin-top: 16px;
+    align-items: center;
+    gap: 14px;
+  }
+  .file-info.show { display: flex; }
+  .file-icon { font-size: 28px; }
+  .file-name { font-weight: 600; font-size: 13px; }
+  .file-size { font-size: 11px; color: var(--muted); margin-top: 2px; }
+  .file-status { margin-left: auto; }
+
+  .parse-status {
+    margin-top: 16px;
+    padding: 12px 16px;
+    border-radius: 8px;
+    font-size: 13px;
+    display: none;
+  }
+  .parse-status.ok { display: block; background: var(--gain-bg); border: 1px solid rgba(63,185,80,0.3); color: var(--gain); }
+  .parse-status.err { display: block; background: var(--loss-bg); border: 1px solid rgba(248,81,73,0.3); color: var(--loss); }
+  .parse-status.info { display: block; background: rgba(88,166,255,0.08); border: 1px solid rgba(88,166,255,0.25); color: var(--accent); }
+
+  .btn-primary {
+    display: inline-flex; align-items: center; gap: 8px;
+    padding: 10px 22px; border-radius: 8px; border: none;
+    background: var(--accent); color: #fff; font-size: 13px;
+    font-weight: 600; cursor: pointer; transition: opacity 0.15s;
+    font-family: 'Inter', sans-serif; margin-top: 18px;
+  }
+  .btn-primary:hover { opacity: 0.85; }
+  .btn-primary:disabled { opacity: 0.4; cursor: not-allowed; }
+
+  .howto {
+    margin-top: 36px;
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 18px 20px;
+  }
+  .howto h4 { font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.7px; color: var(--muted); margin-bottom: 12px; }
+  .howto ol { padding-left: 18px; }
+  .howto li { font-size: 13px; color: var(--muted); margin-bottom: 6px; line-height: 1.5; }
+  .howto li strong { color: var(--text); }
+  .tag { display: inline-block; background: var(--surface); border: 1px solid var(--border); border-radius: 4px; padding: 1px 6px; font-size: 11px; font-family: 'JetBrains Mono', monospace; color: var(--accent2); }
+
+  /* ── EXPORT PANEL ── */
+  .export-wrap { max-width: 680px; margin: 0 auto; }
+  .export-title { font-size: 18px; font-weight: 700; margin-bottom: 6px; }
+  .export-desc { color: var(--muted); font-size: 13px; margin-bottom: 28px; line-height: 1.6; }
+
+  .export-options {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 14px;
+    margin-bottom: 24px;
+  }
+  .export-card {
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 20px;
+    cursor: pointer;
+    transition: all 0.15s;
+    position: relative;
+  }
+  .export-card:hover { border-color: var(--accent); }
+  .export-card.selected { border-color: var(--accent); background: rgba(88,166,255,0.06); }
+  .export-card .sel-dot {
+    position: absolute; top: 14px; right: 14px;
+    width: 16px; height: 16px; border-radius: 50%;
+    border: 2px solid var(--border); background: transparent;
+    transition: all 0.15s;
+  }
+  .export-card.selected .sel-dot { background: var(--accent); border-color: var(--accent); }
+  .export-card-icon { font-size: 28px; margin-bottom: 10px; }
+  .export-card-title { font-size: 14px; font-weight: 600; margin-bottom: 4px; }
+  .export-card-desc { font-size: 12px; color: var(--muted); line-height: 1.5; }
+
+  .export-preview {
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 18px;
+    margin-bottom: 20px;
+  }
+  .export-preview h4 { font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.7px; color: var(--muted); margin-bottom: 14px; }
+  .preview-row { display: flex; align-items: center; justify-content: space-between; padding: 8px 0; border-bottom: 1px solid rgba(45,51,59,0.5); font-size: 13px; }
+  .preview-row:last-child { border-bottom: none; }
+  .preview-row label { color: var(--muted); font-size: 12px; }
+  .preview-check { display: flex; align-items: center; gap: 8px; }
+  .chk { width: 15px; height: 15px; accent-color: var(--accent); cursor: pointer; }
+
+  .btn-export {
+    display: inline-flex; align-items: center; gap: 8px;
+    padding: 11px 26px; border-radius: 8px; border: none;
+    background: linear-gradient(135deg, #58a6ff, #388bfd);
+    color: #fff; font-size: 14px; font-weight: 600;
+    cursor: pointer; transition: opacity 0.15s;
+    font-family: 'Inter', sans-serif; box-shadow: 0 2px 12px rgba(88,166,255,0.25);
+  }
+  .btn-export:hover { opacity: 0.88; }
+
+  .progress-bar {
+    display: none;
+    background: var(--border);
+    border-radius: 4px;
+    height: 4px;
+    margin-top: 14px;
+    overflow: hidden;
+  }
+  .progress-bar.show { display: block; }
+  .progress-fill {
+    height: 100%;
+    background: linear-gradient(90deg, var(--accent), var(--gain));
+    border-radius: 4px;
+    transition: width 0.3s;
+    width: 0%;
+  }
+  .export-msg { margin-top: 12px; font-size: 13px; display: none; }
+  .export-msg.show { display: block; }
+</style>
+</head>
+<body>
+
+<!-- TAB BAR -->
+<div class="tab-bar">
+  <div class="tab-brand">🚛 Omega 7</div>
+  <div id="fb-status" style="margin-left:auto;margin-right:4px;display:flex;align-items:center;gap:6px;font-size:11px;font-weight:600;color:var(--muted);font-family:'JetBrains Mono',monospace;white-space:nowrap;">
+    <span id="fb-dot" style="width:7px;height:7px;border-radius:50%;background:var(--warn);display:inline-block;"></span>
+    <span id="fb-label">Conectando...</span>
+  </div>
+  <button class="tab-btn active" onclick="switchTab('dashboard', this)">
+    <span class="tab-icon">📊</span> Dashboard
+  </button>
+  <button class="tab-btn" onclick="switchTab('upload', this)">
+    <span class="tab-icon">📂</span> Atualizar Dados
+  </button>
+  <button class="tab-btn" onclick="switchTab('export', this)">
+    <span class="tab-icon">📄</span> Exportar PDF
+  </button>
+</div>
+
+<!-- ══════════════════════════════════════════
+     PAINEL DASHBOARD
+══════════════════════════════════════════ -->
+<div id="panel-dashboard" class="tab-panel active">
+
+  <div class="header">
+    <div class="header-left">
+      <h1 id="dash-title">🚛 Omega 7 Transportes — Monitoração de Clientes</h1>
+      <p id="dash-subtitle">SSW 0663 · Unidade DQX · Gerado em 13/06/2026</p>
+    </div>
+    <div style="display:flex; gap:8px; flex-wrap:wrap; align-items:center;">
+      <span class="badge badge-gain" id="badge-cres">▲ 6,1% Crescimento Frete</span>
+    </div>
+  </div>
+
+  <div class="legend">
+    <span class="legend-item"><span class="dot dot-apr"></span> <span id="leg-apr">Abril/2026</span></span>
+    <span class="legend-item"><span class="dot dot-may"></span> <span id="leg-may">Maio/2026</span></span>
+    <span class="legend-item"><span class="dot dot-jun"></span> <span id="leg-jun">Junho/2026</span></span>
+  </div>
+
+  <!-- KPIs -->
+  <div class="kpi-grid" id="kpi-grid"></div>
+
+  <!-- CHARTS -->
+  <div class="charts-grid">
+    <div class="chart-card">
+      <div class="chart-title">Frete Total por Cliente — 3 Períodos</div>
+      <div class="chart-sub">Top 12 clientes · valores em R$</div>
+      <div class="chart-wrap"><canvas id="chartBar"></canvas></div>
+    </div>
+    <div class="chart-card">
+      <div class="chart-title">Evolução do Frete Total (Geral)</div>
+      <div class="chart-sub">Soma de todos os clientes por mês</div>
+      <div class="chart-wrap"><canvas id="chartLine"></canvas></div>
+    </div>
+    <div class="chart-card">
+      <div class="chart-title">Crescimento Período 1 vs Período 2 (% CRES)</div>
+      <div class="chart-sub">Barras positivas = aumento · negativas = queda</div>
+      <div class="chart-wrap"><canvas id="chartCres"></canvas></div>
+    </div>
+    <div class="chart-card">
+      <div class="chart-title" id="donut-title">Participação no Frete — Período Atual</div>
+      <div class="chart-sub">Distribuição entre os principais clientes</div>
+      <div class="chart-wrap"><canvas id="chartDoughnut"></canvas></div>
+    </div>
+  </div>
+
+  <!-- TABLE -->
+  <div class="table-card">
+    <div class="table-header">
+      <h3>📋 Detalhamento por Cliente — Comparativo 3 Períodos</h3>
+      <div class="filter-btns">
+        <button class="filter-btn active" onclick="filterTable('all', this)">Todos</button>
+        <button class="filter-btn" onclick="filterTable('gain', this)">▲ Aumentos</button>
+        <button class="filter-btn" onclick="filterTable('loss', this)">▼ Quedas</button>
+        <button class="filter-btn" onclick="filterTable('zero', this)">⚪ Zerado</button>
+      </div>
+    </div>
+    <div class="tbl-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th>Cliente</th>
+            <th id="th-p1">Frete Jun</th>
+            <th id="th-p2">Frete Mai</th>
+            <th id="th-p3">Frete Abr</th>
+            <th>CRES P1/P2</th>
+            <th>CTRCs P1</th>
+            <th>Peso P1 (kg)</th>
+            <th>RC %</th>
+          </tr>
+        </thead>
+        <tbody id="tableBody"></tbody>
+      </table>
+    </div>
+  </div>
+
+  <div class="footer" id="dash-footer">Omega 7 Transportes e Logística · SSW 0663 · 075 - Monitoração de Clientes · DQX</div>
+</div>
+
+<!-- ══════════════════════════════════════════
+     PAINEL UPLOAD
+══════════════════════════════════════════ -->
+<div id="panel-upload" class="tab-panel">
+  <div class="upload-wrap">
+    <div class="upload-title">📂 Atualizar Dados do Painel</div>
+    <div class="upload-desc">
+      Faça upload de um novo arquivo <strong>.sswweb</strong> exportado pelo SSW (relatório 075 — Monitoração de Clientes).<br>
+      O painel será atualizado automaticamente com os novos períodos.
+    </div>
+
+    <div class="drop-zone" id="dropZone">
+      <input type="file" id="fileInput" accept=".sswweb,.txt,.ssw" />
+      <div class="drop-icon">🗂️</div>
+      <div class="drop-main">Arraste o arquivo aqui</div>
+      <div class="drop-sub">ou <span>clique para selecionar</span> &nbsp;·&nbsp; Aceita <strong>.sswweb</strong></div>
+    </div>
+
+    <div class="file-info" id="fileInfo">
+      <div class="file-icon">📄</div>
+      <div>
+        <div class="file-name" id="fileName">—</div>
+        <div class="file-size" id="fileSize">—</div>
+      </div>
+      <div class="file-status" id="fileStatusIcon">✅</div>
+    </div>
+
+    <div class="parse-status" id="parseStatus"></div>
+
+    <button class="btn-primary" id="btnApply" onclick="applyUpload()" disabled>
+      ✅ Aplicar ao Dashboard
+    </button>
+
+    <div class="howto">
+      <h4>Como exportar o arquivo do SSW</h4>
+      <ol>
+        <li>No SSW, acesse o relatório <strong>075 — Monitoração de Clientes</strong>.</li>
+        <li>Selecione a unidade e o período desejado.</li>
+        <li>Clique em <strong>Exportar</strong> e escolha o formato <span class="tag">.sswweb</span>.</li>
+        <li>Faça o upload do arquivo gerado aqui acima.</li>
+        <li>Clique em <strong>Aplicar ao Dashboard</strong> — os painéis serão atualizados na hora.</li>
+      </ol>
+    </div>
+  </div>
+</div>
+
+<!-- ══════════════════════════════════════════
+     PAINEL EXPORT PDF
+══════════════════════════════════════════ -->
+<div id="panel-export" class="tab-panel">
+  <div class="export-wrap">
+    <div class="export-title">📄 Exportar Relatório em PDF</div>
+    <div class="export-desc">
+      Gere um PDF do painel atual com gráficos e tabela completa. Escolha o formato e os elementos a incluir.
+    </div>
+
+    <div class="export-options">
+      <div class="export-card selected" id="opt-a4" onclick="selectExport('a4')">
+        <div class="sel-dot"></div>
+        <div class="export-card-icon">📃</div>
+        <div class="export-card-title">A4 Retrato</div>
+        <div class="export-card-desc">Formato padrão A4, ideal para impressão e e-mail.</div>
+      </div>
+      <div class="export-card" id="opt-wide" onclick="selectExport('wide')">
+        <div class="sel-dot"></div>
+        <div class="export-card-icon">🖥️</div>
+        <div class="export-card-title">Paisagem / Wide</div>
+        <div class="export-card-desc">Formato horizontal, melhor para tabelas largas.</div>
+      </div>
+    </div>
+
+    <div class="export-preview">
+      <h4>Elementos a incluir</h4>
+      <div class="preview-row">
+        <div class="preview-check"><input class="chk" type="checkbox" id="chk-header" checked> <label for="chk-header">Cabeçalho e KPIs</label></div>
+        <span style="font-size:11px;color:var(--muted)">Resumo executivo</span>
+      </div>
+      <div class="preview-row">
+        <div class="preview-check"><input class="chk" type="checkbox" id="chk-charts" checked> <label for="chk-charts">Gráficos (4 painéis)</label></div>
+        <span style="font-size:11px;color:var(--muted)">Barras, Linha, CRES, Donut</span>
+      </div>
+      <div class="preview-row">
+        <div class="preview-check"><input class="chk" type="checkbox" id="chk-table" checked> <label for="chk-table">Tabela completa de clientes</label></div>
+        <span style="font-size:11px;color:var(--muted)">Todos os períodos e variações</span>
+      </div>
+      <div class="preview-row">
+        <div class="preview-check"><input class="chk" type="checkbox" id="chk-footer" checked> <label for="chk-footer">Rodapé com data e origem</label></div>
+        <span style="font-size:11px;color:var(--muted)">SSW 0663 · DQX</span>
+      </div>
+    </div>
+
+    <button class="btn-export" onclick="exportPDF()">
+      ⬇️ Gerar e Baixar PDF
+    </button>
+
+    <div class="progress-bar" id="progressBar">
+      <div class="progress-fill" id="progressFill"></div>
+    </div>
+    <div class="export-msg" id="exportMsg"></div>
+  </div>
+</div>
+
+<script>
+/* ─────────────────────────────────────────
+   DATA — preloaded from the uploaded file
+───────────────────────────────────────── */
+let clients = [
+  { name: "JCM NITEROI (Total Grupo)", p1: 60015.19, p2: 155395.51, p3: 136330.81, cres: -10, ctrc: 228, peso: 35779, rc: 83 },
+  { name: "FORSETI COMERCIAL",         p1: 19317.21, p2: 48634.39,  p3: 26517.08,  cres: -7,  ctrc: 53,  peso: 82285, rc: -40 },
+  { name: "RC CAMPOS DISTRIBUIÇÃO",    p1: 18160.31, p2: 60253.32,  p3: 20682.81,  cres: -30, ctrc: 109, peso: 30763, rc: 61 },
+  { name: "GF PNEUS (Total Grupo)",    p1: 19006.46, p2: 22567.39,  p3: 44666.58,  cres: null,ctrc: 119, peso: 25721, rc: null },
+  { name: "ITR COMÉRCIO",              p1: 15510.39, p2: 22685.93,  p3: 2709.82,   cres: 60,  ctrc: 64,  peso: 23009, rc: 74 },
+  { name: "INTEGRA BRASIL",            p1: 15327.24, p2: 4840.61,   p3: 4801.15,   cres: 639, ctrc: 7,   peso: 22508, rc: 77 },
+  { name: "LNF COMERCIAL",             p1: 17592.78, p2: 20851.21,  p3: 41551.79,  cres: null,ctrc: 102, peso: 24448, rc: null },
+  { name: "SIQUEIRA CAMP (DQX 0003)",  p1: 6552.64,  p2: 2452.49,   p3: 1918.94,   cres: 523, ctrc: 9,   peso: 12240, rc: -1 },
+  { name: "CPX DISTRIBUIÇÃO (0064)",   p1: 5316.74,  p2: 7613.23,   p3: 3634.07,   cres: 63,  ctrc: 31,  peso: 8061,  rc: 75 },
+  { name: "SUPERPEL COMERCIAL",        p1: 4289.80,  p2: 678.24,    p3: 4662.82,   cres: 1376,ctrc: 22,  peso: 5199,  rc: 63 },
+  { name: "J.C.M. NITEROI R.",         p1: 4828.91,  p2: 646.42,    p3: 4080.35,   cres: 1643,ctrc: 3,   peso: 2148,  rc: 93 },
+  { name: "FORM BOB PAPEL",            p1: 2929.32,  p2: 23107.34,  p3: 7437.12,   cres: -70, ctrc: 3,   peso: 4081,  rc: 68 },
+  { name: "C.H. CARVALHO",             p1: 2410.32,  p2: 738.39,    p3: 2185.01,   cres: 662, ctrc: 7,   peso: 3190,  rc: 78 },
+  { name: "ZEEK (Total Grupo)",        p1: 2030.84,  p2: 816.39,    p3: 2145.64,   cres: 480, ctrc: 20,  peso: 3096,  rc: 72 },
+  { name: "ALTA PERFORMANCE",          p1: 2076.45,  p2: 4074.78,   p3: 4262.68,   cres: 19,  ctrc: 4,   peso: 1616,  rc: 38 },
+  { name: "TUTTI LINE",                p1: 1208.96,  p2: 5867.11,   p3: 3149.83,   cres: -52, ctrc: 2,   peso: 2268,  rc: 78 },
+  { name: "DELLA VIA PNEUS",           p1: 1054.28,  p2: 3746.84,   p3: 3209.76,   cres: -34, ctrc: 3,   peso: 524,   rc: 59 },
+  { name: "BIG TIRES PNEUS",           p1: 1640.85,  p2: 0,         p3: 0,         cres: 0,   ctrc: 11,  peso: 2166,  rc: 75 },
+  { name: "BR040 PNEUS",               p1: 870.55,   p2: 435.99,    p3: 723.81,    cres: 366, ctrc: 5,   peso: 562,   rc: 89 },
+  { name: "GF PNEUS (0020)",           p1: 667.60,   p2: 0,         p3: 283.75,    cres: 88,  ctrc: 5,   peso: 99,    rc: 88 },
+  { name: "HIPER BRASIL",              p1: 245.75,   p2: 2269.88,   p3: 1251.44,   cres: -75, ctrc: 1,   peso: 86,    rc: 94 },
+  { name: "COMERCIAL RODOV.",          p1: 301.75,   p2: 805.08,    p3: 138.35,    cres: -13, ctrc: 1,   peso: 149,   rc: 44 },
+  { name: "ALPHA TIRE",                p1: 0,        p2: 8063.18,   p3: 17549.71,  cres: null,ctrc: 0,   peso: 0,     rc: null },
+  { name: "REDE MANAUS",               p1: 0,        p2: 7698.07,   p3: 37244.42,  cres: null,ctrc: 0,   peso: 0,     rc: null },
+  { name: "RISPAR TRANSP.",            p1: 0,        p2: 0,         p3: 6680.89,   cres: null,ctrc: 0,   peso: 0,     rc: null },
+];
+
+let periods = { p1: 'Jun/2026', p2: 'Mai/2026', p3: 'Abr/2026' };
+let meta = { empresa: 'Omega 7 Transportes e Logística', unidade: 'DQX', gerado: '13/06/2026', crescimento: 6.1 };
+let totals = { p1: { frete: 186754.92, ctrc: 713, peso: 267673 }, p2: { frete: 410664.51, ctrc: 1616, peso: 437759 }, p3: { frete: 355112.45, ctrc: 1764, peso: 337712 } };
+
+let charts = {};
+let exportMode = 'a4';
+let parsedData = null;
+
+const fmt  = v => v.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL', maximumFractionDigits: 0 });
+const fmtN = v => v.toLocaleString('pt-BR');
+const pct  = (a, b) => b === 0 ? null : Math.round(((a - b) / b) * 100);
+
+/* ─── TABS ─── */
+function switchTab(name, btn) {
+  document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+  document.querySelectorAll('.tab-panel').forEach(p => p.classList.remove('active'));
+  btn.classList.add('active');
+  document.getElementById('panel-' + name).classList.add('active');
+}
+
+/* ─── RENDER DASHBOARD ─── */
+function renderDashboard() {
+  // header
+  document.getElementById('dash-title').textContent = '🚛 ' + meta.empresa + ' — Monitoração de Clientes';
+  document.getElementById('dash-subtitle').textContent = 'SSW 0663 · Unidade ' + meta.unidade + ' · Gerado em ' + meta.gerado;
+  const crescSign = meta.crescimento >= 0 ? '▲' : '▼';
+  const badgeEl = document.getElementById('badge-cres');
+  badgeEl.textContent = crescSign + ' ' + Math.abs(meta.crescimento).toFixed(1) + '% Crescimento Frete';
+  badgeEl.className = 'badge ' + (meta.crescimento >= 0 ? 'badge-gain' : 'badge-loss');
+
+  document.getElementById('leg-apr').textContent = periods.p3;
+  document.getElementById('leg-may').textContent = periods.p2;
+  document.getElementById('leg-jun').textContent = periods.p1;
+  document.getElementById('th-p1').textContent = 'Frete ' + periods.p1.split('/')[0];
+  document.getElementById('th-p2').textContent = 'Frete ' + periods.p2.split('/')[0];
+  document.getElementById('th-p3').textContent = 'Frete ' + periods.p3.split('/')[0];
+  document.getElementById('donut-title').textContent = 'Participação no Frete — ' + periods.p1;
+
+  // KPIs
+  const cP1P2 = pct(totals.p1.frete, totals.p2.frete);
+  const cP2P3 = pct(totals.p2.frete, totals.p3.frete);
+  const cCtrc = pct(totals.p1.ctrc, totals.p3.ctrc);
+  const top3gain = [...clients].filter(c => c.cres > 0).sort((a,b) => b.cres - a.cres).slice(0,2);
+  document.getElementById('kpi-grid').innerHTML = `
+    <div class="kpi-card">
+      <div class="kpi-label">Frete Total — ${periods.p1}</div>
+      <div class="kpi-value" style="color:var(--jun)">${fmt(totals.p1.frete).replace('R$\u00a0','R$ ')}</div>
+      <div class="kpi-delta ${cP1P2 >= 0 ? 'up' : 'down'}">${cP1P2 >= 0 ? '▲' : '▼'} ${Math.abs(cP1P2)}% vs ${periods.p2.split('/')[0]}</div>
+      <div class="kpi-sub">${fmtN(totals.p1.ctrc)} CTRCs · ${fmtN(totals.p1.peso)} kg</div>
+    </div>
+    <div class="kpi-card">
+      <div class="kpi-label">Frete Total — ${periods.p2}</div>
+      <div class="kpi-value" style="color:var(--may)">${fmt(totals.p2.frete).replace('R$\u00a0','R$ ')}</div>
+      <div class="kpi-delta ${cP2P3 >= 0 ? 'up' : 'down'}">${cP2P3 >= 0 ? '▲' : '▼'} ${Math.abs(cP2P3)}% vs ${periods.p3.split('/')[0]}</div>
+      <div class="kpi-sub">${fmtN(totals.p2.ctrc)} CTRCs · ${fmtN(totals.p2.peso)} kg</div>
+    </div>
+    <div class="kpi-card">
+      <div class="kpi-label">Frete Total — ${periods.p3}</div>
+      <div class="kpi-value" style="color:var(--apr)">${fmt(totals.p3.frete).replace('R$\u00a0','R$ ')}</div>
+      <div class="kpi-delta" style="color:var(--muted)">Base do período</div>
+      <div class="kpi-sub">${fmtN(totals.p3.ctrc)} CTRCs · ${fmtN(totals.p3.peso)} kg</div>
+    </div>
+    <div class="kpi-card">
+      <div class="kpi-label">Var. Volume ${periods.p3.split('/')[0]}→${periods.p1.split('/')[0]}</div>
+      <div class="kpi-value" style="color:${cCtrc <= 0 ? 'var(--loss)' : 'var(--gain)'}">${cCtrc > 0 ? '+' : ''}${cCtrc}%</div>
+      <div class="kpi-sub">CTRCs: ${fmtN(totals.p3.ctrc)} → ${fmtN(totals.p1.ctrc)}</div>
+      <div class="kpi-delta ${cCtrc <= 0 ? 'down' : 'up'}">${cCtrc <= 0 ? '▼ Redução de volume' : '▲ Crescimento de volume'}</div>
+    </div>
+    <div class="kpi-card">
+      <div class="kpi-label">Crescimento Frete ${periods.p1.split('/')[0]}</div>
+      <div class="kpi-value" style="color:${meta.crescimento >= 0 ? 'var(--gain)' : 'var(--loss)'};font-size:26px">${meta.crescimento >= 0 ? '+' : ''}${meta.crescimento.toFixed(1)}%</div>
+      <div class="kpi-sub">vs ${periods.p2}</div>
+      <div class="kpi-delta ${meta.crescimento >= 0 ? 'up' : 'down'}">${meta.crescimento >= 0 ? '▲ acima do mês anterior' : '▼ abaixo do mês anterior'}</div>
+    </div>
+    <div class="kpi-card">
+      <div class="kpi-label">Maiores Altas ${periods.p1.split('/')[0]}</div>
+      <div class="kpi-value" style="font-size:13px;color:var(--gain);margin-top:4px">${top3gain.map(c => c.name.split(' ')[0] + ' +' + c.cres + '%').join('<br>')}</div>
+      <div class="kpi-sub" style="margin-top:6px">crescimento acentuado</div>
+    </div>
+  `;
+
+  renderTable('all');
+  renderCharts();
+  document.getElementById('dash-footer').textContent = meta.empresa + ' · SSW 0663 · 075 - Monitoração de Clientes · ' + meta.unidade;
+}
+
+/* ─── TABLE ─── */
+function renderTable(filter) {
+  const body = document.getElementById('tableBody');
+  const filtered = clients.filter(c => {
+    if (filter === 'gain') return c.cres !== null && c.cres > 0;
+    if (filter === 'loss') return c.cres !== null && c.cres < 0;
+    if (filter === 'zero') return c.p1 === 0 || (c.p2 === 0 && c.p3 === 0);
+    return true;
+  });
+  body.innerHTML = filtered.map(c => {
+    let cresHtml = '<span style="color:var(--muted)">—</span>';
+    if (c.cres !== null && c.cres !== 0) {
+      const cls = c.cres > 0 ? 'cres-up' : 'cres-down';
+      const arrow = c.cres > 0 ? '▲' : '▼';
+      cresHtml = `<span class="cres-cell ${cls}">${arrow} ${c.cres}%</span>`;
+    } else if (c.cres === 0) {
+      cresHtml = `<span class="cres-cell cres-neutral">novo</span>`;
+    }
+    return `<tr>
+      <td title="${c.name}">${c.name}</td>
+      <td style="font-family:'JetBrains Mono',monospace;color:var(--jun)">${c.p1 > 0 ? fmt(c.p1) : '—'}</td>
+      <td style="font-family:'JetBrains Mono',monospace;color:var(--may)">${c.p2 > 0 ? fmt(c.p2) : '—'}</td>
+      <td style="font-family:'JetBrains Mono',monospace;color:var(--apr)">${c.p3 > 0 ? fmt(c.p3) : '—'}</td>
+      <td style="text-align:center">${cresHtml}</td>
+      <td style="font-family:'JetBrains Mono',monospace">${fmtN(c.ctrc)}</td>
+      <td style="font-family:'JetBrains Mono',monospace">${fmtN(c.peso)}</td>
+      <td style="font-family:'JetBrains Mono',monospace">${c.rc !== null && c.rc !== 0 ? c.rc + '%' : '—'}</td>
+    </tr>`;
+  }).join('');
+}
+
+function filterTable(type, btn) {
+  document.querySelectorAll('.filter-btn').forEach(b => b.className = 'filter-btn');
+  if (type === 'gain') btn.classList.add('active-gain');
+  else if (type === 'loss') btn.classList.add('active-loss');
+  else btn.classList.add('active');
+  renderTable(type);
+}
+
+/* ─── CHARTS ─── */
+function destroyCharts() {
+  Object.values(charts).forEach(c => { try { c.destroy(); } catch(e){} });
+  charts = {};
+}
+
+function renderCharts() {
+  destroyCharts();
+  const top12 = clients.slice(0, 12);
+  const palette = ['#58a6ff','#3fb950','#d2a8ff','#e3b341','#f85149','#79c0ff','#a5d6ff','#ffa657','#8b949e'];
+
+  // Chart 1 – bar
+  charts.bar = new Chart(document.getElementById('chartBar'), {
+    type: 'bar',
+    data: {
+      labels: top12.map(c => c.name.length > 16 ? c.name.slice(0,14)+'…' : c.name),
+      datasets: [
+        { label: periods.p3, data: top12.map(c => c.p3), backgroundColor: 'rgba(88,166,255,0.65)', borderRadius: 3, borderSkipped: false },
+        { label: periods.p2, data: top12.map(c => c.p2), backgroundColor: 'rgba(210,168,255,0.65)', borderRadius: 3, borderSkipped: false },
+        { label: periods.p1, data: top12.map(c => c.p1), backgroundColor: 'rgba(63,185,80,0.75)',  borderRadius: 3, borderSkipped: false },
+      ]
+    },
+    options: { responsive: true, maintainAspectRatio: false,
+      plugins: { legend: { labels: { color: '#8b949e', font: { size: 11 } } }, tooltip: { callbacks: { label: ctx => ` ${ctx.dataset.label}: ${fmt(ctx.raw)}` } } },
+      scales: {
+        x: { ticks: { color: '#8b949e', font: { size: 10 }, maxRotation: 30 }, grid: { color: 'rgba(45,51,59,0.5)' } },
+        y: { ticks: { color: '#8b949e', font: { size: 10 }, callback: v => 'R$'+(v>=1000?(v/1000).toFixed(0)+'k':v) }, grid: { color: 'rgba(45,51,59,0.4)' } }
+      }
+    }
+  });
+
+  // Chart 2 – line
+  charts.line = new Chart(document.getElementById('chartLine'), {
+    type: 'line',
+    data: {
+      labels: [periods.p3, periods.p2, periods.p1],
+      datasets: [
+        { label: 'Frete Total', data: [totals.p3.frete, totals.p2.frete, totals.p1.frete],
+          borderColor: '#58a6ff', backgroundColor: 'rgba(88,166,255,0.1)', fill: true, tension: 0.35, pointRadius: 6, pointBackgroundColor: '#58a6ff', borderWidth: 2.5 },
+        { label: 'CTRCs', data: [totals.p3.ctrc, totals.p2.ctrc, totals.p1.ctrc], yAxisID: 'y2',
+          borderColor: '#3fb950', fill: false, tension: 0.35, pointRadius: 5, pointBackgroundColor: '#3fb950', borderWidth: 2, borderDash: [4, 3] },
+      ]
+    },
+    options: { responsive: true, maintainAspectRatio: false,
+      plugins: { legend: { labels: { color: '#8b949e', font: { size: 11 } } }, tooltip: { callbacks: { label: ctx => ctx.dataset.yAxisID === 'y2' ? ` CTRCs: ${ctx.raw}` : ` ${fmt(ctx.raw)}` } } },
+      scales: {
+        x: { ticks: { color: '#8b949e', font: { size: 11 } }, grid: { color: 'rgba(45,51,59,0.4)' } },
+        y: { ticks: { color: '#8b949e', font: { size: 10 }, callback: v => 'R$'+(v/1000).toFixed(0)+'k' }, grid: { color: 'rgba(45,51,59,0.4)' }, position: 'left' },
+        y2: { ticks: { color: '#3fb950', font: { size: 10 } }, grid: { display: false }, position: 'right' }
+      }
+    }
+  });
+
+  // Chart 3 – CRES horizontal
+  const crescClients = [...clients].filter(c => c.cres !== null && c.cres !== 0).sort((a,b) => b.cres - a.cres).slice(0,14);
+  charts.cres = new Chart(document.getElementById('chartCres'), {
+    type: 'bar',
+    data: {
+      labels: crescClients.map(c => c.name.length > 14 ? c.name.slice(0,12)+'…' : c.name),
+      datasets: [{ label: '% CRES', data: crescClients.map(c => c.cres),
+        backgroundColor: crescClients.map(c => c.cres > 0 ? 'rgba(63,185,80,0.7)' : 'rgba(248,81,73,0.7)'),
+        borderRadius: 4, borderSkipped: false }]
+    },
+    options: { indexAxis: 'y', responsive: true, maintainAspectRatio: false,
+      plugins: { legend: { display: false }, tooltip: { callbacks: { label: ctx => ` ${ctx.raw > 0 ? '▲' : '▼'} ${ctx.raw}%` } } },
+      scales: {
+        x: { ticks: { color: '#8b949e', font: { size: 10 }, callback: v => v+'%' }, grid: { color: 'rgba(45,51,59,0.4)' } },
+        y: { ticks: { color: '#e6edf3', font: { size: 10 } }, grid: { color: 'rgba(45,51,59,0.3)' } }
+      }
+    }
+  });
+
+  // Chart 4 – doughnut
+  const top8 = [...clients].filter(c => c.p1 > 0).sort((a,b) => b.p1 - a.p1).slice(0,8);
+  const outros = [...clients].filter(c => c.p1 > 0).sort((a,b) => b.p1 - a.p1).slice(8).reduce((s,c) => s+c.p1, 0);
+  charts.donut = new Chart(document.getElementById('chartDoughnut'), {
+    type: 'doughnut',
+    data: {
+      labels: [...top8.map(c => c.name.length > 16 ? c.name.slice(0,14)+'…' : c.name), 'Outros'],
+      datasets: [{ data: [...top8.map(c => c.p1), outros], backgroundColor: palette, borderWidth: 2, borderColor: '#1c2128', hoverOffset: 6 }]
+    },
+    options: { responsive: true, maintainAspectRatio: false, cutout: '62%',
+      plugins: {
+        legend: { position: 'right', labels: { color: '#8b949e', font: { size: 10 }, padding: 8, boxWidth: 10 } },
+        tooltip: { callbacks: { label: ctx => { const tot = ctx.dataset.data.reduce((a,b)=>a+b,0); return ` ${ctx.label}: ${fmt(ctx.raw)} (${((ctx.raw/tot)*100).toFixed(1)}%)`; } } }
+      }
+    }
+  });
+}
+
+/* ─────────────────────────────────────────
+   UPLOAD / PARSE
+───────────────────────────────────────── */
+const dropZone = document.getElementById('dropZone');
+const fileInput = document.getElementById('fileInput');
+
+dropZone.addEventListener('dragover', e => { e.preventDefault(); dropZone.classList.add('drag-over'); });
+dropZone.addEventListener('dragleave', () => dropZone.classList.remove('drag-over'));
+dropZone.addEventListener('drop', e => { e.preventDefault(); dropZone.classList.remove('drag-over'); const f = e.dataTransfer.files[0]; if (f) handleFile(f); });
+fileInput.addEventListener('change', e => { if (e.target.files[0]) handleFile(e.target.files[0]); });
+
+function handleFile(file) {
+  document.getElementById('fileName').textContent = file.name;
+  document.getElementById('fileSize').textContent = (file.size / 1024).toFixed(1) + ' KB';
+  document.getElementById('fileInfo').classList.add('show');
+  document.getElementById('fileStatusIcon').textContent = '⏳';
+  showStatus('info', '🔄 Lendo e interpretando arquivo...');
+  document.getElementById('btnApply').disabled = true;
+  parsedData = null;
+
+  const reader = new FileReader();
+  reader.onload = e => {
+    try {
+      const text = e.target.result;
+      parsedData = parseSSW(text);
+      document.getElementById('fileStatusIcon').textContent = '✅';
+      showStatus('ok', `✅ Arquivo lido com sucesso! ${parsedData.clients.length} clientes encontrados · Períodos: ${parsedData.periods.p3} / ${parsedData.periods.p2} / ${parsedData.periods.p1}`);
+      document.getElementById('btnApply').disabled = false;
+    } catch(err) {
+      document.getElementById('fileStatusIcon').textContent = '❌';
+      showStatus('err', '❌ Erro ao interpretar o arquivo: ' + err.message + '. Verifique se é um relatório SSW 075 válido.');
+    }
+  };
+  reader.readAsText(file, 'latin1');
+}
+
+function showStatus(type, msg) {
+  const el = document.getElementById('parseStatus');
+  el.className = 'parse-status ' + type;
+  el.textContent = msg;
+}
+
+function parseSSW(text) {
+  const lines = text.split('\n');
+
+  // Detect periods from header line
+  const periodLine = lines.find(l => /\d{2}\/\d{4}/.test(l) && l.includes('2026'));
+  const periodMatches = periodLine ? [...periodLine.matchAll(/(\d{2}\/\d{4})/g)].map(m => m[1]) : [];
+  const p1Label = periodMatches[0] ? mesToNome(periodMatches[0]) : 'P1';
+  const p2Label = periodMatches[1] ? mesToNome(periodMatches[1]) : 'P2';
+  const p3Label = periodMatches[2] ? mesToNome(periodMatches[2]) : 'P3';
+
+  // Meta info
+  const empresaLine = lines[0] || '';
+  const empresa = empresaLine.trim().replace(/\s{2,}.*/,'').trim() || 'Omega 7 Transportes';
+
+  const unidLine = lines.find(l => /UNIDADE RESP:/.test(l));
+  const unidade = unidLine ? (unidLine.match(/UNIDADE RESP:\s*(\w+)/)||[])[1] || 'DQX' : 'DQX';
+
+  const dateLine = lines.find(l => /\d{2}\/\d{2}\/\d{2}/.test(l));
+  const gerado = dateLine ? (dateLine.match(/(\d{2}\/\d{2}\/\d{2,4})/)||[])[1] || '' : '';
+
+  // Parse CRESCIMENTO FRETE
+  const crescLine = lines.find(l => /CRESCIMENTO DO FRETE/.test(l));
+  const crescMatch = crescLine ? crescLine.match(/([\-\d,\.]+)%/) : null;
+  const crescimento = crescMatch ? parseFloat(crescMatch[1].replace(',','.')) : 0;
+
+  // Parse clients — look for data rows
+  const clientRows = [];
+  const dataRe = /^\s{0,6}(\d{5})\s+(DQX|TOTAL\s+DO\s+GRUPO|TODOS)/;
+  const clientRe = /^\s{6,}(DQX\s+\d{4})\s+(\S+)\s+(.{14})/;
+
+  // Simplified: read every line that looks like client data
+  // Pattern: spaces + optional seq + DQX XXXX CNPJ NAME ... numbers
+  const rowRe = /(?:(\d{5})\s+)?DQX\s+\d{4}\s+\d{14}\s+(.{13})\s+\S+(?:\s+\S+)?\s+(\d+)\s+([\d\.]+)\s+([\d\.]+)\s+([\d\.,]+)\s+(\d+)\s+([\d\.]+)\s+([\d\.]+)\s+([\d\.,]+)(?:\s+([\d\.]+)\s+([\d\.]+)\s+([\d\.,]+))?/;
+
+  const parsedClients = [];
+  const seen = new Set();
+
+  lines.forEach(line => {
+    // Skip headers and separator lines
+    if (/^[-=\s*]+$/.test(line.trim())) return;
+    if (/CLIENTE|CTRC|TODOS|VENDEDOR|TOTAL DO GRUPO|CRESCIMENTO/.test(line)) return;
+
+    const m = line.match(rowRe);
+    if (m) {
+      const name = m[2].trim();
+      if (!name || seen.has(name)) return;
+
+      const p1frete = parseVal(m[6]);
+      const p2frete = m[10] ? parseVal(m[10]) : 0;
+      const p3frete = m[13] ? parseVal(m[13]) : 0;
+
+      // Try to get CRES from the line
+      const cresMatch = line.match(/\s+([\-\d]+)\s+[\-\d]+\s+/);
+      const cres = cresMatch ? parseInt(cresMatch[1]) : null;
+
+      if (p1frete > 0 || p2frete > 0 || p3frete > 0) {
+        seen.add(name);
+        parsedClients.push({
+          name,
+          p1: p1frete,
+          p2: p2frete,
+          p3: p3frete,
+          cres: isNaN(cres) ? null : cres,
+          ctrc: parseInt(m[3]) || 0,
+          peso: parseFloat(m[4].replace('.','')) || 0,
+          rc: null
+        });
+      }
+    }
+  });
+
+  // Parse totals from TODOS CLIENTES lines
+  const todosLine = lines.find(l => /TODOS CLIENTES DA UNID/.test(l));
+  const todosVals = todosLine ? [...todosLine.matchAll(/(\d[\d\.]+)/g)].map(m => parseFloat(m[1].replace(/\./g,''))) : [];
+
+  const tot = {
+    p1: { frete: 0, ctrc: 0, peso: 0 },
+    p2: { frete: 0, ctrc: 0, peso: 0 },
+    p3: { frete: 0, ctrc: 0, peso: 0 },
+  };
+
+  // Try to get totals from the footer lines
+  const freteLine = lines.find(l => /\d{3}\.\d{3},\d{2}/.test(l) && /\d{3}\.\d{3}/.test(l) && !/DQX/.test(l));
+  if (freteLine) {
+    const vals = [...freteLine.matchAll(/([\d\.]+,\d{2})/g)].map(m => parseVal(m[1]));
+    if (vals.length >= 3) { tot.p1.frete = vals[0]; tot.p2.frete = vals[1]; tot.p3.frete = vals[2]; }
+  }
+
+  // Fallback: sum from clients
+  if (!tot.p1.frete) {
+    parsedClients.forEach(c => { tot.p1.frete += c.p1; tot.p2.frete += c.p2; tot.p3.frete += c.p3; tot.p1.ctrc += c.ctrc; });
+  }
+
+  const result = {
+    clients: parsedClients.length > 3 ? parsedClients : null,
+    periods: { p1: p1Label, p2: p2Label, p3: p3Label },
+    meta: { empresa, unidade, gerado, crescimento },
+    totals: tot
+  };
+
+  if (!result.clients) throw new Error('Nenhum cliente encontrado. Verifique o formato do arquivo.');
+  return result;
+}
+
+function parseVal(s) {
+  if (!s) return 0;
+  return parseFloat(s.replace(/\./g,'').replace(',','.')) || 0;
+}
+
+function mesToNome(mmyyyy) {
+  const meses = ['Jan','Fev','Mar','Abr','Mai','Jun','Jul','Ago','Set','Out','Nov','Dez'];
+  const [mm, yyyy] = mmyyyy.split('/');
+  return meses[parseInt(mm)-1] + '/' + yyyy;
+}
+
+async function applyUpload() {
+  if (!parsedData) return;
+  clients = parsedData.clients;
+  periods = parsedData.periods;
+  meta    = parsedData.meta;
+  if (parsedData.totals.p1.frete > 0) totals = parsedData.totals;
+  renderDashboard();
+
+  // Salva no Firebase
+  if (window.__firebase) {
+    fbSetStatus('loading', 'Salvando...');
+    try {
+      await window.__firebase.salvar({ clients, periods, meta, totals });
+      fbSetStatus('ok', '☁ Salvo na nuvem');
+    } catch (err) {
+      fbSetStatus('err', '✗ Erro ao salvar');
+      showStatus('err', '⚠️ Dados aplicados localmente mas não salvos na nuvem: ' + err.message);
+    }
+  }
+
+  // Volta para o dashboard
+  document.querySelectorAll('.tab-btn')[0].click();
+  switchTab('dashboard', document.querySelectorAll('.tab-btn')[0]);
+}
+
+/* ─────────────────────────────────────────
+   EXPORT PDF
+───────────────────────────────────────── */
+function selectExport(mode) {
+  exportMode = mode;
+  document.querySelectorAll('.export-card').forEach(c => c.classList.remove('selected'));
+  document.getElementById('opt-' + mode).classList.add('selected');
+}
+
+async function exportPDF() {
+  const { jsPDF } = window.jspdf;
+  const bar   = document.getElementById('progressBar');
+  const fill  = document.getElementById('progressFill');
+  const msg   = document.getElementById('exportMsg');
+  const btn   = document.querySelector('.btn-export');
+
+  const inclHeader = document.getElementById('chk-header').checked;
+  const inclCharts = document.getElementById('chk-charts').checked;
+  const inclTable  = document.getElementById('chk-table').checked;
+  const inclFooter = document.getElementById('chk-footer').checked;
+
+  btn.disabled = true;
+  bar.classList.add('show');
+  msg.className = 'export-msg show';
+  msg.style.color = 'var(--accent)';
+
+  const isWide = exportMode === 'wide';
+  const pdf = new jsPDF({ orientation: isWide ? 'landscape' : 'portrait', unit: 'mm', format: 'a4' });
+  const W = isWide ? 297 : 210;
+  const H = isWide ? 210 : 297;
+
+  let y = 12;
+  const margin = 12;
+  const contentW = W - margin * 2;
+
+  const setProgress = (p, text) => {
+    fill.style.width = p + '%';
+    msg.textContent = text;
+  };
+
+  setProgress(5, '⏳ Preparando PDF...');
+  await sleep(100);
+
+  // ── HEADER & KPIs ──
+  if (inclHeader) {
+    setProgress(15, '📊 Renderizando cabeçalho...');
+    await sleep(80);
+
+    pdf.setFillColor(13, 17, 23);
+    pdf.rect(0, 0, W, H, 'F');
+
+    pdf.setFont('helvetica', 'bold');
+    pdf.setFontSize(14);
+    pdf.setTextColor(230, 237, 243);
+    pdf.text('Omega 7 Transportes — Monitoração de Clientes', margin, y);
+    y += 6;
+
+    pdf.setFont('helvetica', 'normal');
+    pdf.setFontSize(8);
+    pdf.setTextColor(139, 148, 158);
+    pdf.text(`SSW 0663 · Unidade ${meta.unidade} · Gerado em ${meta.gerado} · Períodos: ${periods.p3} / ${periods.p2} / ${periods.p1}`, margin, y);
+    y += 4;
+
+    // Crescimento badge
+    const cColor = meta.crescimento >= 0 ? [63, 185, 80] : [248, 81, 73];
+    pdf.setFillColor(...cColor);
+    pdf.roundedRect(margin, y, 52, 6, 1.5, 1.5, 'F');
+    pdf.setFont('helvetica', 'bold');
+    pdf.setFontSize(7.5);
+    pdf.setTextColor(255, 255, 255);
+    pdf.text(`${meta.crescimento >= 0 ? '▲' : '▼'} ${Math.abs(meta.crescimento).toFixed(1)}% Crescimento Frete ${periods.p1}`, margin + 2, y + 4);
+    y += 10;
+
+    // KPI mini-cards
+    const kpis = [
+      { label: `Frete ${periods.p1}`, val: fmt(totals.p1.frete), sub: `${fmtN(totals.p1.ctrc)} CTRCs`, color: [63,185,80] },
+      { label: `Frete ${periods.p2}`, val: fmt(totals.p2.frete), sub: `${fmtN(totals.p2.ctrc)} CTRCs`, color: [210,168,255] },
+      { label: `Frete ${periods.p3}`, val: fmt(totals.p3.frete), sub: `${fmtN(totals.p3.ctrc)} CTRCs`, color: [88,166,255] },
+    ];
+    const kW = (contentW - 8) / 3;
+    kpis.forEach((k, i) => {
+      const kx = margin + i * (kW + 4);
+      pdf.setFillColor(28, 33, 40);
+      pdf.roundedRect(kx, y, kW, 14, 2, 2, 'F');
+      pdf.setDrawColor(45, 51, 59);
+      pdf.roundedRect(kx, y, kW, 14, 2, 2, 'S');
+      pdf.setFont('helvetica', 'normal');
+      pdf.setFontSize(7);
+      pdf.setTextColor(139, 148, 158);
+      pdf.text(k.label, kx + 3, y + 4);
+      pdf.setFont('helvetica', 'bold');
+      pdf.setFontSize(10);
+      pdf.setTextColor(...k.color);
+      pdf.text(k.val, kx + 3, y + 10);
+      pdf.setFont('helvetica', 'normal');
+      pdf.setFontSize(6.5);
+      pdf.setTextColor(139, 148, 158);
+      pdf.text(k.sub, kx + 3, y + 13.5);
+    });
+    y += 18;
+  }
+
+  // ── CHARTS ──
+  if (inclCharts) {
+    setProgress(35, '📈 Capturando gráficos...');
+    await sleep(120);
+
+    const canvases = ['chartBar','chartLine','chartCres','chartDoughnut'];
+    const titles = ['Frete por Cliente (Top 12)', 'Evolução Geral', 'CRES %', 'Participação ' + periods.p1];
+    const cW = (contentW - 4) / 2;
+    const cH = 48;
+
+    for (let i = 0; i < canvases.length; i++) {
+      const canvas = document.getElementById(canvases[i]);
+      const imgData = canvas.toDataURL('image/png', 0.95);
+      const cx = margin + (i % 2) * (cW + 4);
+      const cy = y + Math.floor(i / 2) * (cH + 6);
+
+      pdf.setFillColor(28, 33, 40);
+      pdf.roundedRect(cx, cy, cW, cH, 2, 2, 'F');
+      pdf.setDrawColor(45, 51, 59);
+      pdf.roundedRect(cx, cy, cW, cH, 2, 2, 'S');
+      pdf.setFont('helvetica', 'bold');
+      pdf.setFontSize(7);
+      pdf.setTextColor(230, 237, 243);
+      pdf.text(titles[i], cx + 3, cy + 5);
+      pdf.addImage(imgData, 'PNG', cx + 2, cy + 7, cW - 4, cH - 9);
+      setProgress(35 + (i + 1) * 8, `📈 Gráfico ${i+1}/4...`);
+      await sleep(60);
+    }
+    y += cH * 2 + 18;
+  }
+
+  // ── TABLE ──
+  if (inclTable) {
+    setProgress(75, '📋 Gerando tabela...');
+    await sleep(80);
+
+    if (y + 20 > H - 20) { pdf.addPage(); y = 14; pdf.setFillColor(13, 17, 23); pdf.rect(0, 0, W, H, 'F'); }
+
+    pdf.setFont('helvetica', 'bold');
+    pdf.setFontSize(9);
+    pdf.setTextColor(230, 237, 243);
+    pdf.text('Detalhamento por Cliente — Comparativo 3 Períodos', margin, y);
+    y += 5;
+
+    const cols = [
+      { label: 'Cliente', w: isWide ? 58 : 50 },
+      { label: `Frete ${periods.p1}`, w: 28 },
+      { label: `Frete ${periods.p2}`, w: 28 },
+      { label: `Frete ${periods.p3}`, w: 28 },
+      { label: 'CRES%', w: 16 },
+      { label: 'CTRCs', w: 14 },
+    ];
+    const totalColW = cols.reduce((s, c) => s + c.w, 0);
+
+    // Header row
+    pdf.setFillColor(22, 27, 34);
+    pdf.rect(margin, y, totalColW, 7, 'F');
+    pdf.setFont('helvetica', 'bold');
+    pdf.setFontSize(6.5);
+    pdf.setTextColor(139, 148, 158);
+    let cx = margin;
+    cols.forEach(col => {
+      pdf.text(col.label, cx + 2, y + 4.5);
+      cx += col.w;
+    });
+    y += 7;
+
+    const rowH = 5.8;
+    clients.forEach((c, idx) => {
+      if (y + rowH > H - (inclFooter ? 12 : 8)) {
+        pdf.addPage();
+        y = 14;
+        pdf.setFillColor(13, 17, 23);
+        pdf.rect(0, 0, W, H, 'F');
+        // re-draw header
+        pdf.setFillColor(22, 27, 34);
+        pdf.rect(margin, y, totalColW, 7, 'F');
+        pdf.setFont('helvetica', 'bold');
+        pdf.setFontSize(6.5);
+        pdf.setTextColor(139, 148, 158);
+        let hx = margin;
+        cols.forEach(col => { pdf.text(col.label, hx + 2, y + 4.5); hx += col.w; });
+        y += 7;
+      }
+
+      if (idx % 2 === 0) { pdf.setFillColor(20, 25, 32); pdf.rect(margin, y, totalColW, rowH, 'F'); }
+
+      pdf.setFont('helvetica', 'normal');
+      pdf.setFontSize(6.5);
+      pdf.setTextColor(230, 237, 243);
+
+      const row = [
+        c.name.length > 26 ? c.name.slice(0, 24) + '…' : c.name,
+        c.p1 > 0 ? fmt(c.p1) : '—',
+        c.p2 > 0 ? fmt(c.p2) : '—',
+        c.p3 > 0 ? fmt(c.p3) : '—',
+        c.cres !== null ? (c.cres > 0 ? '+' : '') + c.cres + '%' : '—',
+        String(c.ctrc),
+      ];
+
+      let rx = margin;
+      row.forEach((val, vi) => {
+        const col = cols[vi];
+        if (vi === 4 && c.cres !== null) {
+          pdf.setTextColor(c.cres > 0 ? 63 : 248, c.cres > 0 ? 185 : 81, c.cres > 0 ? 80 : 73);
+        } else {
+          pdf.setTextColor(230, 237, 243);
+        }
+        pdf.text(val, rx + 2, y + 4);
+        rx += col.w;
+      });
+      // border bottom
+      pdf.setDrawColor(45, 51, 59);
+      pdf.line(margin, y + rowH, margin + totalColW, y + rowH);
+      y += rowH;
+    });
+    y += 6;
+  }
+
+  // ── FOOTER ──
+  const totalPages = pdf.internal.getNumberOfPages();
+  for (let p = 1; p <= totalPages; p++) {
+    pdf.setPage(p);
+    if (inclFooter) {
+      pdf.setFillColor(22, 27, 34);
+      pdf.rect(0, H - 10, W, 10, 'F');
+      pdf.setFont('helvetica', 'normal');
+      pdf.setFontSize(6.5);
+      pdf.setTextColor(139, 148, 158);
+      pdf.text(`${meta.empresa} · SSW 0663 · 075 - Monitoração de Clientes · ${meta.unidade}`, margin, H - 4);
+      pdf.text(`Pág. ${p} / ${totalPages}`, W - margin - 14, H - 4);
+    }
+  }
+
+  setProgress(95, '💾 Salvando PDF...');
+  await sleep(100);
+
+  const fname = `Omega7_Monitor_${periods.p1.replace('/','-')}_${periods.p2.replace('/','-')}_${periods.p3.replace('/','-')}.pdf`;
+  pdf.save(fname);
+
+  setProgress(100, '✅ PDF baixado com sucesso!');
+  msg.style.color = 'var(--gain)';
+  btn.disabled = false;
+}
+
+function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
+
+/* ─────────────────────────────────────────
+   FIREBASE — STATUS UI
+───────────────────────────────────────── */
+function fbSetStatus(state, label) {
+  const dot   = document.getElementById('fb-dot');
+  const lbl   = document.getElementById('fb-label');
+  const colors = { ok: 'var(--gain)', err: 'var(--loss)', loading: 'var(--warn)' };
+  dot.style.background = colors[state] || colors.loading;
+  lbl.textContent = label;
+}
+
+/* ─── INIT ─── */
+// Renderiza com dados embutidos imediatamente para não ficar em branco
+renderDashboard();
+
+// Aguarda o Firebase inicializar (módulo ES) — protegido contra race condition
+const firebaseInitPromise = new Promise(resolve => {
+  if (window.__firebaseReady) {
+    resolve(); // módulo já carregou antes deste script
+  } else {
+    window.__firebaseResolve = resolve; // módulo ainda não carregou
+  }
+});
+
+(async () => {
+  try {
+    await firebaseInitPromise;
+    fbSetStatus('loading', 'Carregando...');
+    const data = await window.__firebase.carregar();
+    if (data && data.clients && data.clients.length > 0) {
+      clients = data.clients;
+      periods = data.periods || periods;
+      meta    = data.meta    || meta;
+      totals  = data.totals  || totals;
+      renderDashboard();
+      fbSetStatus('ok', '☁ Dados da nuvem');
+    } else {
+      await window.__firebase.salvar({ clients, periods, meta, totals });
+      fbSetStatus('ok', '☁ Dados locais salvos');
+    }
+  } catch (err) {
+    fbSetStatus('err', '✗ Offline');
+    console.warn('[Firebase] Usando dados locais.', err);
+  }
+})();
+</script>
+</body>
+</html>
