@@ -1,0 +1,1526 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Omega 7 — Central de Dashboards</title>
+
+<!-- Libs -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+
+<!-- Firebase -->
+<script type="module">
+  import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
+  import {
+    getFirestore, doc, getDoc, setDoc, serverTimestamp,
+    collection, addDoc, getDocs, deleteDoc, query, orderBy
+  } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
+
+  const firebaseConfig = {
+    apiKey: "AIzaSyBZLoyZzC258WHnfNL0Y8952f1hIcHU6Wk",
+    authDomain: "dashboard-omega7.firebaseapp.com",
+    projectId: "dashboard-omega7",
+    storageBucket: "dashboard-omega7.firebasestorage.app",
+    messagingSenderId: "188973028311",
+    appId: "1:188973028311:web:767df317d07d46eff13192"
+  };
+
+  const app = initializeApp(firebaseConfig);
+  const db  = getFirestore(app);
+
+  // OMG7 (monitoração de clientes)
+  window.__firebase = {
+    async carregar() {
+      const snap = await getDoc(doc(db, 'omega7', 'dashboard'));
+      return snap.exists() ? snap.data() : null;
+    },
+    async salvar(payload) {
+      await setDoc(doc(db, 'omega7', 'dashboard'), { ...payload, updatedAt: serverTimestamp() });
+    }
+  };
+
+  // Vendedores
+  window.__fbVendas = {
+    async salvarVendas(registros) {
+      const col = collection(db, 'vendas');
+      let saved = 0;
+      for (const r of registros) { await addDoc(col, { ...r, criadoEm: serverTimestamp() }); saved++; }
+      return saved;
+    },
+    async carregarVendas() {
+      const q = query(collection(db, 'vendas'), orderBy('criadoEm', 'desc'));
+      const snap = await getDocs(q);
+      return snap.docs.map(d => ({ id: d.id, ...d.data() }));
+    },
+    async limparVendas() {
+      const snap = await getDocs(collection(db, 'vendas'));
+      for (const d of snap.docs) await deleteDoc(doc(db, 'vendas', d.id));
+    }
+  };
+
+  if (window.__firebaseResolve) window.__firebaseResolve();
+  else window.__firebaseReady = true;
+  if (window.__fbVendasResolve) window.__fbVendasResolve();
+  else window.__fbVendasReady = true;
+</script>
+
+<style>
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;600&display=swap');
+
+:root {
+  --bg: #0d1117;
+  --surface: #161b22;
+  --card: #1c2128;
+  --border: #2d333b;
+  --text: #e6edf3;
+  --muted: #8b949e;
+  --gain: #3fb950;
+  --gain-bg: rgba(63,185,80,0.1);
+  --loss: #f85149;
+  --loss-bg: rgba(248,81,73,0.1);
+  --accent: #58a6ff;
+  --accent2: #d2a8ff;
+  --warn: #e3b341;
+  --warn-bg: rgba(227,179,65,0.12);
+  --orange: #ffa657;
+  --teal: #39d353;
+  --apr: #58a6ff;
+  --may: #d2a8ff;
+  --jun: #3fb950;
+}
+
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body { background: var(--bg); color: var(--text); font-family: 'Inter', sans-serif; font-size: 14px; line-height: 1.5; min-height: 100vh; }
+::-webkit-scrollbar { width: 6px; height: 6px; }
+::-webkit-scrollbar-track { background: var(--bg); }
+::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+
+/* ══════════════════════════════════════
+   TELA DE LOGIN
+══════════════════════════════════════ */
+#login-overlay {
+  position: fixed; inset: 0; z-index: 9999;
+  display: flex; align-items: center; justify-content: center;
+  background:
+    radial-gradient(circle at 30% 20%, rgba(125,90,200,0.18), transparent 45%),
+    radial-gradient(circle at 75% 80%, rgba(88,166,255,0.12), transparent 45%),
+    var(--bg);
+  font-family: 'Inter', sans-serif;
+  transition: opacity .35s ease, visibility .35s ease;
+}
+#login-overlay.hidden { opacity: 0; visibility: hidden; pointer-events: none; }
+.login-card {
+  width: 380px; max-width: 92vw;
+  background: rgba(28,33,40,0.65);
+  border: 1px solid rgba(210,168,255,0.18);
+  border-radius: 18px;
+  padding: 32px 30px 26px;
+  backdrop-filter: blur(14px);
+  box-shadow: 0 0 0 1px rgba(255,255,255,0.03), 0 30px 60px -20px rgba(88,40,160,0.45), 0 0 40px -10px rgba(125,90,200,0.35);
+  position: relative;
+}
+.login-card::before {
+  content:''; position:absolute; top:-1px; left:8%; right:8%; height:2px;
+  background: linear-gradient(90deg, transparent, var(--accent2), transparent);
+  filter: blur(1px);
+}
+.login-brand { text-align:center; margin-bottom: 22px; }
+.login-brand .login-logo {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 40px; font-weight: 700; letter-spacing: 1px;
+  background: linear-gradient(135deg, #b9c4ff 0%, var(--accent2) 50%, #fff 100%);
+  -webkit-background-clip: text; background-clip: text; color: transparent;
+  line-height: 1;
+}
+.login-brand .login-name {
+  margin-top: 8px; font-size: 22px; font-weight: 700; letter-spacing: 4px;
+  color: var(--text);
+}
+.login-brand .login-name span { color: var(--accent2); }
+.login-brand .login-sub {
+  margin-top: 6px; font-size: 11px; letter-spacing: 3px; color: var(--muted);
+  display:flex; align-items:center; justify-content:center; gap:10px;
+}
+.login-brand .login-sub::before, .login-brand .login-sub::after {
+  content:''; flex:1; height:1px; background: var(--border); max-width: 50px;
+}
+.login-field {
+  display:flex; align-items:center; gap:10px;
+  background: rgba(13,17,23,0.6); border: 1px solid var(--border);
+  border-radius: 10px; padding: 12px 14px; margin-bottom: 14px;
+  transition: border-color .2s;
+}
+.login-field:focus-within { border-color: var(--accent2); }
+.login-field svg { flex-shrink:0; opacity:.6; }
+.login-field input {
+  flex:1; background:none; border:none; outline:none; color: var(--text);
+  font-size: 14px; font-family:'Inter',sans-serif;
+}
+.login-field input::placeholder { color: var(--muted); }
+.login-field .eye-toggle { cursor:pointer; opacity:.6; display:flex; }
+.login-field .eye-toggle:hover { opacity: 1; }
+.login-btn {
+  width:100%; margin-top: 6px; padding: 13px; border:none; border-radius: 10px;
+  background: linear-gradient(135deg, #7c5ce0, #5a3fb8);
+  color:#fff; font-size:15px; font-weight:600; cursor:pointer;
+  display:flex; align-items:center; justify-content:center; gap:8px;
+  transition: filter .15s, transform .1s;
+}
+.login-btn:hover { filter: brightness(1.12); }
+.login-btn:active { transform: scale(0.99); }
+.login-error {
+  margin-top: 10px; font-size: 12px; color: var(--loss); text-align:center;
+  min-height: 16px;
+}
+.login-footer {
+  margin-top: 18px; padding-top: 14px; border-top: 1px solid var(--border);
+  text-align:center; font-size: 11px; color: var(--muted);
+  display:flex; align-items:center; justify-content:center; gap:6px;
+}
+
+
+.main-nav {
+  display: flex;
+  align-items: center;
+  background: #0d1117;
+  border-bottom: 2px solid var(--border);
+  padding: 0 20px;
+  gap: 0;
+  position: sticky;
+  top: 0;
+  z-index: 100;
+}
+.nav-brand {
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--accent);
+  letter-spacing: -0.3px;
+  padding-right: 20px;
+  border-right: 1px solid var(--border);
+  margin-right: 0;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+.main-tab {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 14px 22px;
+  border: none;
+  background: transparent;
+  color: var(--muted);
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  border-bottom: 3px solid transparent;
+  transition: all 0.18s;
+  white-space: nowrap;
+  font-family: 'Inter', sans-serif;
+  flex-shrink: 0;
+  letter-spacing: -0.2px;
+  position: relative;
+  bottom: -2px;
+}
+.main-tab:hover { color: var(--text); background: rgba(88,166,255,0.05); }
+.main-tab.active { color: var(--text); border-bottom-color: var(--accent); background: rgba(88,166,255,0.06); }
+.main-tab .tab-dot {
+  width: 8px; height: 8px; border-radius: 50%;
+  display: inline-block; flex-shrink: 0;
+}
+.dot-omg { background: var(--accent); }
+.dot-vend { background: var(--gain); }
+.nav-status {
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--muted);
+  font-family: 'JetBrains Mono', monospace;
+  white-space: nowrap;
+  flex-shrink: 0;
+  padding-left: 16px;
+}
+.fb-dot { width: 7px; height: 7px; border-radius: 50%; display: inline-block; }
+
+/* ══ MAIN PANELS ══ */
+.main-panel { display: none; }
+.main-panel.active { display: block; }
+
+/* ══ SUB TAB BAR ══ */
+.tab-bar {
+  display: flex;
+  align-items: center;
+  background: var(--surface);
+  border-bottom: 1px solid var(--border);
+  padding: 0 20px;
+  gap: 2px;
+  flex-wrap: nowrap;
+  overflow-x: auto;
+}
+.tab-brand {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--muted);
+  letter-spacing: -0.2px;
+  padding-right: 14px;
+  border-right: 1px solid var(--border);
+  margin-right: 4px;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+.tab-btn {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  padding: 10px 13px;
+  border: none;
+  background: transparent;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 500;
+  cursor: pointer;
+  border-bottom: 2px solid transparent;
+  transition: all 0.15s;
+  white-space: nowrap;
+  font-family: 'Inter', sans-serif;
+  flex-shrink: 0;
+}
+.tab-btn:hover { color: var(--text); }
+.tab-btn.active { color: var(--text); border-bottom-color: var(--accent); }
+.fb-status { margin-left: auto; display: flex; align-items: center; gap: 6px; font-size: 11px; font-weight: 600; color: var(--muted); font-family: 'JetBrains Mono', monospace; white-space: nowrap; flex-shrink: 0; padding-left: 12px; }
+
+/* ══ TAB PANELS ══ */
+.tab-panel { display: none; padding: 22px; }
+.tab-panel.active { display: block; }
+
+/* ══ SHARED COMPONENTS ══ */
+.dash-header { display: flex; align-items: flex-start; justify-content: space-between; margin-bottom: 20px; gap: 12px; flex-wrap: wrap; }
+.dash-header h1 { font-size: 19px; font-weight: 700; letter-spacing: -0.4px; }
+.dash-header p { color: var(--muted); font-size: 12px; margin-top: 2px; }
+.header-actions { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+.badge { display: inline-flex; align-items: center; gap: 6px; padding: 5px 13px; border-radius: 20px; font-size: 12px; font-weight: 600; font-family: 'JetBrains Mono', monospace; }
+.badge-gain { background: var(--gain-bg); color: var(--gain); border: 1px solid rgba(63,185,80,0.3); }
+.badge-loss { background: var(--loss-bg); color: var(--loss); border: 1px solid rgba(248,81,73,0.3); }
+.badge-warn { background: var(--warn-bg); color: var(--warn); border: 1px solid rgba(227,179,65,0.3); }
+.kpi-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 10px; margin-bottom: 18px; }
+.kpi-card { background: var(--card); border: 1px solid var(--border); border-radius: 10px; padding: 14px 16px; position: relative; overflow: hidden; }
+.kpi-card::before { content: ''; position: absolute; top: 0; left: 0; right: 0; height: 2px; background: var(--kpi-color, var(--accent)); }
+.kpi-label { font-size: 10px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.8px; color: var(--muted); margin-bottom: 5px; }
+.kpi-value { font-size: 20px; font-weight: 700; font-family: 'JetBrains Mono', monospace; line-height: 1; color: var(--kpi-color, var(--text)); }
+.kpi-sub { font-size: 11px; color: var(--muted); margin-top: 3px; }
+.kpi-delta { font-size: 11px; font-weight: 600; font-family: 'JetBrains Mono', monospace; margin-top: 3px; }
+.up { color: var(--gain); } .down { color: var(--loss); } .neutral { color: var(--muted); }
+.charts-row { display: grid; gap: 14px; margin-bottom: 14px; }
+.charts-row.cols-2 { grid-template-columns: 1fr 1fr; }
+.charts-row.cols-3 { grid-template-columns: 1fr 1fr 1fr; }
+.charts-row.cols-1-2 { grid-template-columns: 1fr 2fr; }
+.charts-row.cols-2-1 { grid-template-columns: 2fr 1fr; }
+@media (max-width: 1000px) { .charts-row.cols-2, .charts-row.cols-3, .charts-row.cols-1-2, .charts-row.cols-2-1 { grid-template-columns: 1fr; } }
+.chart-card { background: var(--card); border: 1px solid var(--border); border-radius: 10px; padding: 16px; }
+.chart-title { font-size: 12px; font-weight: 700; color: var(--text); margin-bottom: 2px; }
+.chart-sub { font-size: 11px; color: var(--muted); margin-bottom: 12px; }
+.chart-wrap { position: relative; height: 220px; }
+.chart-wrap.tall { height: 280px; }
+.chart-wrap.short { height: 160px; }
+.table-card { background: var(--card); border: 1px solid var(--border); border-radius: 10px; overflow: hidden; margin-bottom: 14px; }
+.table-head { padding: 12px 16px; border-bottom: 1px solid var(--border); display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; }
+.table-head h3 { font-size: 13px; font-weight: 600; }
+.tbl-wrap { overflow-x: auto; max-height: 320px; overflow-y: auto; }
+table { width: 100%; border-collapse: collapse; font-size: 12px; }
+thead th { background: var(--surface); padding: 8px 12px; text-align: right; font-weight: 600; font-size: 10px; text-transform: uppercase; letter-spacing: 0.6px; color: var(--muted); white-space: nowrap; border-bottom: 1px solid var(--border); position: sticky; top: 0; z-index: 1; }
+thead th:first-child { text-align: left; }
+tbody tr { border-bottom: 1px solid rgba(45,51,59,0.5); transition: background 0.1s; }
+tbody tr:hover { background: rgba(88,166,255,0.04); }
+tbody tr:last-child { border-bottom: none; }
+td { padding: 8px 12px; text-align: right; white-space: nowrap; font-size: 12px; }
+td:first-child { text-align: left; font-weight: 500; max-width: 180px; overflow: hidden; text-overflow: ellipsis; }
+.rank-badge { display: inline-flex; align-items: center; justify-content: center; width: 20px; height: 20px; border-radius: 50%; font-size: 10px; font-weight: 700; }
+.rank-1 { background: rgba(227,179,65,0.2); color: var(--warn); }
+.rank-2 { background: rgba(139,148,158,0.15); color: #b0b8c1; }
+.rank-3 { background: rgba(255,166,87,0.15); color: var(--orange); }
+.rank-n { background: transparent; color: var(--muted); }
+.tag-pill { display: inline-block; padding: 2px 8px; border-radius: 10px; font-size: 10px; font-weight: 600; }
+.pill-gain { background: var(--gain-bg); color: var(--gain); }
+.pill-loss { background: var(--loss-bg); color: var(--loss); }
+.pill-warn { background: var(--warn-bg); color: var(--warn); }
+.filter-bar { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 18px; background: var(--card); border: 1px solid var(--border); border-radius: 10px; padding: 12px 16px; align-items: flex-end; }
+.filter-group { display: flex; flex-direction: column; gap: 4px; }
+.filter-label { font-size: 10px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.6px; color: var(--muted); }
+.filter-select, .filter-input { background: var(--surface); border: 1px solid var(--border); color: var(--text); border-radius: 6px; padding: 5px 10px; font-size: 12px; font-family: 'Inter', sans-serif; cursor: pointer; min-width: 110px; }
+.filter-select:focus, .filter-input:focus { outline: none; border-color: var(--accent); }
+.btn-filter { padding: 6px 14px; border-radius: 6px; border: none; background: var(--accent); color: #fff; font-size: 12px; font-weight: 600; cursor: pointer; font-family: 'Inter', sans-serif; transition: opacity 0.15s; align-self: flex-end; }
+.btn-filter:hover { opacity: 0.85; }
+.btn-filter.secondary { background: var(--surface); border: 1px solid var(--border); color: var(--muted); }
+.btn-filter.secondary:hover { color: var(--text); border-color: var(--accent); }
+.gauge-svg { width: 140px; height: 80px; }
+.panel-inner { max-width: 720px; margin: 0 auto; }
+.panel-title { font-size: 18px; font-weight: 700; margin-bottom: 6px; }
+.panel-desc { color: var(--muted); font-size: 13px; margin-bottom: 24px; line-height: 1.6; }
+.drop-zone { border: 2px dashed var(--border); border-radius: 14px; padding: 44px 28px; text-align: center; cursor: pointer; transition: all 0.2s; background: var(--card); position: relative; }
+.drop-zone:hover, .drop-zone.drag-over { border-color: var(--accent); background: rgba(88,166,255,0.04); }
+.drop-icon { font-size: 36px; margin-bottom: 10px; }
+.drop-main { font-size: 15px; font-weight: 600; margin-bottom: 5px; }
+.drop-sub { font-size: 12px; color: var(--muted); }
+.drop-sub span { color: var(--accent); cursor: pointer; text-decoration: underline; }
+.parse-status { margin-top: 14px; padding: 10px 14px; border-radius: 8px; font-size: 13px; display: none; }
+.parse-status.ok { display: block; background: var(--gain-bg); border: 1px solid rgba(63,185,80,0.3); color: var(--gain); }
+.parse-status.err { display: block; background: var(--loss-bg); border: 1px solid rgba(248,81,73,0.3); color: var(--loss); }
+.parse-status.info { display: block; background: rgba(88,166,255,0.08); border: 1px solid rgba(88,166,255,0.25); color: var(--accent); }
+.btn-primary { display: inline-flex; align-items: center; gap: 8px; padding: 10px 22px; border-radius: 8px; border: none; background: var(--accent); color: #fff; font-size: 13px; font-weight: 600; cursor: pointer; transition: opacity 0.15s; font-family: 'Inter', sans-serif; margin-top: 16px; }
+.btn-primary:hover { opacity: 0.85; }
+.btn-primary:disabled { opacity: 0.4; cursor: not-allowed; }
+.btn-danger { background: var(--loss); }
+.mapping-card { margin-top: 20px; background: var(--card); border: 1px solid var(--border); border-radius: 10px; padding: 16px 18px; }
+.mapping-card h4 { font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.7px; color: var(--muted); margin-bottom: 12px; }
+.mapping-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.mapping-row { display: flex; align-items: center; gap: 8px; font-size: 12px; }
+.mapping-row span { color: var(--muted); min-width: 80px; }
+.mapping-select { flex: 1; background: var(--surface); border: 1px solid var(--border); color: var(--text); border-radius: 6px; padding: 4px 8px; font-size: 12px; font-family: 'Inter', sans-serif; }
+.preview-table-wrap { margin-top: 14px; max-height: 200px; overflow: auto; border-radius: 8px; border: 1px solid var(--border); }
+.howto { margin-top: 28px; background: var(--card); border: 1px solid var(--border); border-radius: 10px; padding: 16px 18px; }
+.howto h4 { font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.7px; color: var(--muted); margin-bottom: 10px; }
+.howto li { font-size: 13px; color: var(--muted); margin-bottom: 5px; line-height: 1.5; }
+.howto li strong { color: var(--text); }
+.tag { display: inline-block; background: var(--surface); border: 1px solid var(--border); border-radius: 4px; padding: 1px 6px; font-size: 11px; font-family: 'JetBrains Mono', monospace; color: var(--accent2); }
+.export-options { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 20px; }
+.export-card { background: var(--card); border: 1px solid var(--border); border-radius: 10px; padding: 18px; cursor: pointer; transition: all 0.15s; position: relative; }
+.export-card:hover, .export-card.selected { border-color: var(--accent); background: rgba(88,166,255,0.06); }
+.export-card .sel-dot { position: absolute; top: 12px; right: 12px; width: 15px; height: 15px; border-radius: 50%; border: 2px solid var(--border); background: transparent; }
+.export-card.selected .sel-dot { background: var(--accent); border-color: var(--accent); }
+.export-card-icon { font-size: 24px; margin-bottom: 8px; }
+.export-card-title { font-size: 13px; font-weight: 600; margin-bottom: 3px; }
+.export-card-desc { font-size: 11px; color: var(--muted); line-height: 1.4; }
+.export-preview { background: var(--card); border: 1px solid var(--border); border-radius: 10px; padding: 16px; margin-bottom: 18px; }
+.export-preview h4 { font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.7px; color: var(--muted); margin-bottom: 12px; }
+.preview-row { display: flex; align-items: center; justify-content: space-between; padding: 7px 0; border-bottom: 1px solid rgba(45,51,59,0.5); font-size: 13px; }
+.preview-row:last-child { border-bottom: none; }
+.preview-row label { color: var(--muted); font-size: 12px; cursor: pointer; }
+.chk { width: 14px; height: 14px; accent-color: var(--accent); cursor: pointer; margin-right: 6px; }
+.btn-export { display: inline-flex; align-items: center; gap: 8px; padding: 11px 26px; border-radius: 8px; border: none; background: linear-gradient(135deg, #58a6ff, #388bfd); color: #fff; font-size: 14px; font-weight: 600; cursor: pointer; transition: opacity 0.15s; font-family: 'Inter', sans-serif; box-shadow: 0 2px 12px rgba(88,166,255,0.25); }
+.btn-export:hover { opacity: 0.88; }
+.btn-export:disabled { opacity: 0.4; cursor: not-allowed; }
+.progress-bar { display: none; background: var(--border); border-radius: 4px; height: 4px; margin-top: 12px; overflow: hidden; }
+.progress-bar.show { display: block; }
+.progress-fill { height: 100%; background: linear-gradient(90deg, var(--accent), var(--gain)); border-radius: 4px; transition: width 0.3s; width: 0%; }
+.export-msg { margin-top: 10px; font-size: 13px; display: none; }
+.export-msg.show { display: block; }
+.dash-footer { text-align: center; font-size: 11px; color: var(--muted); padding-top: 8px; padding-bottom: 4px; }
+.spinner { display: inline-block; width: 14px; height: 14px; border: 2px solid rgba(88,166,255,0.3); border-top-color: var(--accent); border-radius: 50%; animation: spin 0.7s linear infinite; }
+@keyframes spin { to { transform: rotate(360deg); } }
+.file-info { display: none; background: var(--card); border: 1px solid var(--border); border-radius: 10px; padding: 12px 16px; margin-top: 14px; align-items: center; gap: 12px; }
+.file-info.show { display: flex; }
+.cres-cell { font-family: 'JetBrains Mono', monospace; font-weight: 600; font-size: 11px; padding: 2px 7px; border-radius: 5px; display: inline-block; }
+.cres-up { color: var(--gain); background: var(--gain-bg); }
+.cres-down { color: var(--loss); background: var(--loss-bg); }
+.cres-neutral { color: var(--warn); background: var(--warn-bg); }
+.dot { width: 8px; height: 8px; border-radius: 50%; display: inline-block; }
+.dot-apr { background: var(--apr); } .dot-may { background: var(--may); } .dot-jun { background: var(--jun); }
+.legend { display: flex; gap: 18px; align-items: center; margin-bottom: 20px; flex-wrap: wrap; }
+.legend-item { display: flex; align-items: center; gap: 6px; font-size: 12px; color: var(--muted); font-weight: 500; }
+.filter-btn { padding: 4px 11px; border-radius: 6px; font-size: 11px; font-weight: 600; cursor: pointer; border: 1px solid var(--border); background: transparent; color: var(--muted); transition: all 0.15s; font-family: 'Inter', sans-serif; }
+.filter-btn:hover { color: var(--text); }
+.filter-btn.active { background: var(--accent); color: #fff; border-color: var(--accent); }
+.filter-btn.active-loss { background: var(--loss); color: #fff; border-color: var(--loss); }
+.filter-btn.active-gain { background: var(--gain); color: #fff; border-color: var(--gain); }
+.filter-btns { display: flex; gap: 6px; flex-wrap: wrap; }
+
+/* Toast */
+#toast { position: fixed; bottom: 24px; right: 24px; background: var(--card); border: 1px solid var(--border); border-radius: 10px; padding: 12px 18px; font-size: 13px; box-shadow: 0 4px 20px rgba(0,0,0,0.5); z-index: 9999; transform: translateY(20px); opacity: 0; transition: all 0.3s; pointer-events: none; }
+#toast.show { transform: translateY(0); opacity: 1; }
+</style>
+</head>
+<body>
+
+<!-- ══════════════════════════════════════
+     TELA DE LOGIN
+══════════════════════════════════════ -->
+<div id="login-overlay">
+  <div class="login-card">
+    <div class="login-brand">
+      <div class="login-logo">AG</div>
+      <div class="login-name">ANGEL <span>2809</span></div>
+      <div class="login-sub">PROJETOS LOGÍSTICOS</div>
+    </div>
+
+    <form id="login-form" autocomplete="off" onsubmit="return doLogin(event)">
+      <div class="login-field">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
+        <input type="text" id="login-user" placeholder="Usuário" autocomplete="username" />
+      </div>
+      <div class="login-field">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
+        <input type="password" id="login-pass" placeholder="Senha" autocomplete="current-password" />
+        <span class="eye-toggle" onclick="togglePass()">
+          <svg id="login-eye" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
+        </span>
+      </div>
+      <button type="submit" class="login-btn">Entrar
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="5" y1="12" x2="19" y2="12"/><polyline points="12 5 19 12 12 19"/></svg>
+      </button>
+      <div class="login-error" id="login-error"></div>
+    </form>
+
+    <div class="login-footer">
+      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
+      Acesso seguro ao sistema
+    </div>
+  </div>
+</div>
+
+
+<!-- ══════════════════════════════════════
+     BARRA DE NAVEGAÇÃO PRINCIPAL
+══════════════════════════════════════ -->
+<nav class="main-nav">
+  <div class="nav-brand">🚛 Omega 7</div>
+  <button class="main-tab active" onclick="switchMain('omg7', this)">
+    <span class="tab-dot dot-omg"></span>
+    Dashboard OMG 7
+  </button>
+  <button class="main-tab" onclick="switchMain('vendedores', this)">
+    <span class="tab-dot dot-vend"></span>
+    Dashboard Vendedores
+  </button>
+  <div class="nav-status">
+    <span class="fb-dot" id="nav-fb-dot" style="background:var(--warn)"></span>
+    <span id="nav-fb-label">Conectando…</span>
+  </div>
+</nav>
+
+<div id="toast"></div>
+
+<!-- ══════════════════════════════════════
+     PAINEL PRINCIPAL: OMG 7
+══════════════════════════════════════ -->
+<div id="main-omg7" class="main-panel active">
+
+  <!-- Sub-tabbar OMG7 -->
+  <div class="tab-bar">
+    <div class="tab-brand">📊 Monitoração</div>
+    <button class="tab-btn active" onclick="omgSwitchTab('dashboard', this)">📊 Dashboard</button>
+    <button class="tab-btn" onclick="omgSwitchTab('upload', this)">📂 Atualizar Dados</button>
+    <button class="tab-btn" onclick="omgSwitchTab('export', this)">📄 Exportar PDF</button>
+  </div>
+
+  <!-- Dashboard OMG7 -->
+  <div id="omg-panel-dashboard" class="tab-panel active">
+    <div class="dash-header">
+      <div>
+        <h1 id="omg-dash-title">🚛 Omega 7 Transportes — Monitoração de Clientes</h1>
+        <p id="omg-dash-subtitle">SSW 0663 · Unidade DQX · Gerado em 13/06/2026</p>
+      </div>
+      <div style="display:flex; gap:8px; flex-wrap:wrap; align-items:center;">
+        <span class="badge badge-gain" id="omg-badge-cres">▲ 6,1% Crescimento Frete</span>
+      </div>
+    </div>
+
+    <div class="legend">
+      <span class="legend-item"><span class="dot dot-apr"></span> <span id="omg-leg-apr">Abril/2026</span></span>
+      <span class="legend-item"><span class="dot dot-may"></span> <span id="omg-leg-may">Maio/2026</span></span>
+      <span class="legend-item"><span class="dot dot-jun"></span> <span id="omg-leg-jun">Junho/2026</span></span>
+    </div>
+
+    <div class="kpi-grid" id="omg-kpi-grid"></div>
+
+    <div class="charts-row cols-2">
+      <div class="chart-card">
+        <div class="chart-title">Frete Total por Cliente — 3 Períodos</div>
+        <div class="chart-sub">Top 12 clientes · valores em R$</div>
+        <div class="chart-wrap"><canvas id="omg-chartBar"></canvas></div>
+      </div>
+      <div class="chart-card">
+        <div class="chart-title">Evolução do Frete Total (Geral)</div>
+        <div class="chart-sub">Soma de todos os clientes por mês</div>
+        <div class="chart-wrap"><canvas id="omg-chartLine"></canvas></div>
+      </div>
+    </div>
+    <div class="charts-row cols-2">
+      <div class="chart-card">
+        <div class="chart-title">Crescimento P1 vs P2 (% CRES)</div>
+        <div class="chart-sub">Barras positivas = aumento · negativas = queda</div>
+        <div class="chart-wrap"><canvas id="omg-chartCres"></canvas></div>
+      </div>
+      <div class="chart-card">
+        <div class="chart-title" id="omg-donut-title">Participação no Frete — Período Atual</div>
+        <div class="chart-sub">Distribuição entre os principais clientes</div>
+        <div class="chart-wrap"><canvas id="omg-chartDoughnut"></canvas></div>
+      </div>
+    </div>
+
+    <div class="table-card">
+      <div class="table-head">
+        <h3>📋 Detalhamento por Cliente — Comparativo 3 Períodos</h3>
+        <div class="filter-btns">
+          <button class="filter-btn active" onclick="omgFilterTable('all', this)">Todos</button>
+          <button class="filter-btn" onclick="omgFilterTable('gain', this)">▲ Aumentos</button>
+          <button class="filter-btn" onclick="omgFilterTable('loss', this)">▼ Quedas</button>
+          <button class="filter-btn" onclick="omgFilterTable('zero', this)">⚪ Zerado</button>
+        </div>
+      </div>
+      <div class="tbl-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>Cliente</th>
+              <th id="omg-th-p1">Frete Jun</th>
+              <th id="omg-th-p2">Frete Mai</th>
+              <th id="omg-th-p3">Frete Abr</th>
+              <th>CRES P1/P2</th>
+              <th>CTRCs P1</th>
+              <th>Peso P1 (kg)</th>
+              <th>RC %</th>
+            </tr>
+          </thead>
+          <tbody id="omg-tableBody"></tbody>
+        </table>
+      </div>
+    </div>
+    <div class="dash-footer" id="omg-dash-footer">Omega 7 Transportes e Logística · SSW 0663 · 075 - Monitoração de Clientes · DQX</div>
+  </div>
+
+  <!-- Upload OMG7 -->
+  <div id="omg-panel-upload" class="tab-panel">
+    <div class="panel-inner">
+      <div class="panel-title">📂 Atualizar Dados do Painel</div>
+      <div class="panel-desc">
+        Faça upload de um novo arquivo <strong>.sswweb</strong> exportado pelo SSW (relatório 075 — Monitoração de Clientes).<br>
+        O painel será atualizado automaticamente com os novos períodos.
+      </div>
+      <div class="drop-zone" id="omg-dropZone">
+        <input type="file" id="omg-fileInput" accept=".sswweb,.txt,.ssw" style="position:absolute;inset:0;opacity:0;cursor:pointer;width:100%;height:100%;" />
+        <div class="drop-icon">🗂️</div>
+        <div class="drop-main">Arraste o arquivo aqui</div>
+        <div class="drop-sub">ou <span>clique para selecionar</span> · Aceita <strong>.sswweb</strong></div>
+      </div>
+      <div class="file-info" id="omg-fileInfo">
+        <div style="font-size:26px">📄</div>
+        <div><div style="font-weight:600;font-size:13px" id="omg-fileName">—</div><div style="font-size:11px;color:var(--muted)" id="omg-fileSize">—</div></div>
+        <div style="margin-left:auto" id="omg-fileStatusIcon">✅</div>
+      </div>
+      <div class="parse-status" id="omg-parseStatus"></div>
+      <button class="btn-primary" id="omg-btnApply" onclick="omgApplyUpload()" disabled>✅ Aplicar ao Dashboard</button>
+      <div class="howto">
+        <h4>Como exportar o arquivo do SSW</h4>
+        <ol>
+          <li>No SSW, acesse o relatório <strong>075 — Monitoração de Clientes</strong>.</li>
+          <li>Selecione a unidade e o período desejado.</li>
+          <li>Clique em <strong>Exportar</strong> e escolha o formato <span class="tag">.sswweb</span>.</li>
+          <li>Faça o upload do arquivo gerado aqui acima e clique em <strong>Aplicar ao Dashboard</strong>.</li>
+        </ol>
+      </div>
+    </div>
+  </div>
+
+  <!-- Export PDF OMG7 -->
+  <div id="omg-panel-export" class="tab-panel">
+    <div class="panel-inner">
+      <div class="panel-title">📄 Exportar Relatório em PDF</div>
+      <div class="panel-desc">Gere um PDF do painel de monitoração de clientes com gráficos e tabela completa.</div>
+      <div class="export-options">
+        <div class="export-card selected" id="omg-opt-a4" onclick="omgSelectExport('a4')"><div class="sel-dot"></div><div class="export-card-icon">📃</div><div class="export-card-title">A4 Retrato</div><div class="export-card-desc">Padrão A4, ideal para impressão.</div></div>
+        <div class="export-card" id="omg-opt-wide" onclick="omgSelectExport('wide')"><div class="sel-dot"></div><div class="export-card-icon">🖥️</div><div class="export-card-title">Paisagem / Wide</div><div class="export-card-desc">Horizontal, melhor para tabelas largas.</div></div>
+      </div>
+      <div class="export-preview">
+        <h4>Elementos a incluir</h4>
+        <div class="preview-row"><div><input class="chk" type="checkbox" id="omg-chk-header" checked><label for="omg-chk-header">Cabeçalho e KPIs</label></div><span style="font-size:11px;color:var(--muted)">Resumo executivo</span></div>
+        <div class="preview-row"><div><input class="chk" type="checkbox" id="omg-chk-charts" checked><label for="omg-chk-charts">Gráficos (4 painéis)</label></div><span style="font-size:11px;color:var(--muted)">Barras, Linha, CRES, Donut</span></div>
+        <div class="preview-row"><div><input class="chk" type="checkbox" id="omg-chk-table" checked><label for="omg-chk-table">Tabela completa</label></div><span style="font-size:11px;color:var(--muted)">Todos os períodos</span></div>
+        <div class="preview-row"><div><input class="chk" type="checkbox" id="omg-chk-footer" checked><label for="omg-chk-footer">Rodapé</label></div><span style="font-size:11px;color:var(--muted)">SSW 0663 · DQX</span></div>
+      </div>
+      <button class="btn-export" id="omg-btnExport" onclick="omgExportPDF()">⬇️ Gerar e Baixar PDF</button>
+      <div class="progress-bar" id="omg-progressBar"><div class="progress-fill" id="omg-progressFill"></div></div>
+      <div class="export-msg" id="omg-exportMsg"></div>
+    </div>
+  </div>
+</div>
+
+<!-- ══════════════════════════════════════
+     PAINEL PRINCIPAL: VENDEDORES
+══════════════════════════════════════ -->
+<div id="main-vendedores" class="main-panel">
+
+  <!-- Sub-tabbar Vendedores -->
+  <div class="tab-bar">
+    <div class="tab-brand">👥 Comercial</div>
+    <button class="tab-btn active" onclick="vendSwitchTab('dashboard', this)">📈 Comercial</button>
+    <button class="tab-btn" onclick="vendSwitchTab('rankings', this)">🏆 Rankings</button>
+    <button class="tab-btn" onclick="vendSwitchTab('upload', this)">📂 Importar</button>
+    <button class="tab-btn" onclick="vendSwitchTab('export', this)">📄 PDF</button>
+    <div class="fb-status">
+      <span class="fb-dot" id="vend-fb-dot" style="background:var(--warn)"></span>
+      <span id="vend-fb-label">Conectando…</span>
+    </div>
+  </div>
+
+  <!-- Dashboard Vendedores -->
+  <div id="vend-panel-dashboard" class="tab-panel active">
+    <div class="dash-header">
+      <div>
+        <h1 id="vend-dash-title">📈 Omega 7 — Dashboard Comercial de Vendedores</h1>
+        <p>Atualizado em <span id="vend-dash-date">—</span> · <span id="vend-dash-rec">0 registros</span></p>
+      </div>
+      <div class="header-actions">
+        <span class="badge badge-gain" id="vend-badge-fat">R$ 0</span>
+        <span class="badge badge-warn" id="vend-badge-lucro">Lucro R$ 0</span>
+      </div>
+    </div>
+
+    <div class="filter-bar">
+      <div class="filter-group"><div class="filter-label">Período</div><select class="filter-select" id="vend-f-periodo" onchange="vendApplyFilters()"><option value="">Todos</option></select></div>
+      <div class="filter-group"><div class="filter-label">Ano</div><select class="filter-select" id="vend-f-ano" onchange="vendApplyFilters()"><option value="">Todos</option></select></div>
+      <div class="filter-group"><div class="filter-label">Vendedor</div><select class="filter-select" id="vend-f-vendedor" onchange="vendApplyFilters()"><option value="">Todos</option></select></div>
+      <div class="filter-group"><div class="filter-label">Produto</div><select class="filter-select" id="vend-f-produto" onchange="vendApplyFilters()"><option value="">Todos</option></select></div>
+      <div class="filter-group"><div class="filter-label">Estado</div><select class="filter-select" id="vend-f-estado" onchange="vendApplyFilters()"><option value="">Todos</option></select></div>
+      <div class="filter-group"><div class="filter-label">Canal</div><select class="filter-select" id="vend-f-canal" onchange="vendApplyFilters()"><option value="">Todos</option></select></div>
+      <button class="btn-filter secondary" onclick="vendClearFilters()">✕ Limpar</button>
+    </div>
+
+    <div class="kpi-grid">
+      <div class="kpi-card" style="--kpi-color:var(--accent)"><div class="kpi-label">Faturamento Total</div><div class="kpi-value" id="vend-kpi-fat">R$ 0</div><div class="kpi-sub" id="vend-kpi-fat-sub">0 vendas</div></div>
+      <div class="kpi-card" style="--kpi-color:var(--gain)"><div class="kpi-label">Lucro Bruto</div><div class="kpi-value" id="vend-kpi-lucro">R$ 0</div><div class="kpi-sub" id="vend-kpi-margem-sub">Margem 0%</div></div>
+      <div class="kpi-card" style="--kpi-color:var(--accent2)"><div class="kpi-label">Ticket Médio</div><div class="kpi-value" id="vend-kpi-ticket">R$ 0</div><div class="kpi-sub" id="vend-kpi-ticket-sub">0 pedidos</div></div>
+      <div class="kpi-card" style="--kpi-color:var(--warn)"><div class="kpi-label">Margem %</div><div class="kpi-value" id="vend-kpi-margem">0%</div><div class="kpi-sub">Lucro / Faturamento</div></div>
+      <div class="kpi-card" style="--kpi-color:var(--orange)"><div class="kpi-label">Total Clientes</div><div class="kpi-value" id="vend-kpi-clientes">0</div><div class="kpi-sub" id="vend-kpi-recorrentes">0 recorrentes</div></div>
+      <div class="kpi-card" style="--kpi-color:var(--teal)"><div class="kpi-label">Qtd Vendas</div><div class="kpi-value" id="vend-kpi-qtd">0</div><div class="kpi-sub" id="vend-kpi-qtd-sub">unidades vendidas</div></div>
+    </div>
+
+    <div class="charts-row cols-2">
+      <div class="chart-card"><div class="chart-title">📈 Evolução de Faturamento</div><div class="chart-sub">Faturamento e Lucro ao longo do tempo</div><div class="chart-wrap"><canvas id="vend-chartLinha"></canvas></div></div>
+      <div class="chart-card"><div class="chart-title">👥 Faturamento por Vendedor</div><div class="chart-sub">Top 10 vendedores por receita</div><div class="chart-wrap"><canvas id="vend-chartVendedor"></canvas></div></div>
+    </div>
+    <div class="charts-row cols-3">
+      <div class="chart-card"><div class="chart-title">🥧 % por Canal de Venda</div><div class="chart-sub">Distribuição por canal</div><div class="chart-wrap"><canvas id="vend-chartCanal"></canvas></div></div>
+      <div class="chart-card"><div class="chart-title">📦 Top Produtos</div><div class="chart-sub">Faturamento por produto</div><div class="chart-wrap"><canvas id="vend-chartProduto"></canvas></div></div>
+      <div class="chart-card"><div class="chart-title">🗺️ Vendas por Estado</div><div class="chart-sub">Faturamento por UF</div><div class="chart-wrap"><canvas id="vend-chartEstado"></canvas></div></div>
+    </div>
+    <div class="charts-row cols-2">
+      <div class="chart-card"><div class="chart-title">📊 Margem por Vendedor</div><div class="chart-sub">Receita vs Lucro</div><div class="chart-wrap"><canvas id="vend-chartMargem"></canvas></div></div>
+      <div class="chart-card"><div class="chart-title">🌡️ Dispersão Qtd × Valor</div><div class="chart-sub">Correlação quantidade e valor</div><div class="chart-wrap"><canvas id="vend-chartScatter"></canvas></div></div>
+    </div>
+    <div class="charts-row cols-3">
+      <div class="chart-card" style="grid-column:span 1">
+        <div class="chart-title">🎯 Meta de Faturamento</div>
+        <div class="chart-sub">Progresso em relação à meta mensal</div>
+        <div id="vend-gauge-container" style="display:flex;flex-direction:column;align-items:center;justify-content:center;height:180px;">
+          <svg class="gauge-svg" viewBox="0 0 140 80" id="vend-gaugeSvg">
+            <defs><linearGradient id="vend-gGrad" x1="0%" y1="0%" x2="100%" y2="0%"><stop offset="0%" style="stop-color:#f85149"/><stop offset="50%" style="stop-color:#e3b341"/><stop offset="100%" style="stop-color:#3fb950"/></linearGradient></defs>
+            <path d="M 10 75 A 60 60 0 0 1 130 75" fill="none" stroke="#2d333b" stroke-width="12" stroke-linecap="round"/>
+            <path id="vend-gaugeArc" d="M 10 75 A 60 60 0 0 1 130 75" fill="none" stroke="url(#vend-gGrad)" stroke-width="12" stroke-linecap="round" stroke-dasharray="0 200"/>
+            <text x="70" y="68" text-anchor="middle" fill="#e6edf3" font-size="16" font-weight="700" font-family="JetBrains Mono,monospace" id="vend-gaugePct">0%</text>
+          </svg>
+          <div style="text-align:center;margin-top:6px;">
+            <div style="font-size:11px;color:var(--muted)">Meta: <input id="vend-metaInput" type="number" value="100000" style="background:var(--surface);border:1px solid var(--border);color:var(--text);border-radius:4px;padding:2px 6px;font-size:11px;width:90px;font-family:'JetBrains Mono',monospace;" onchange="vendUpdateGauge()"></div>
+            <div style="font-size:11px;color:var(--muted);margin-top:4px;" id="vend-gaugeLabel">Realizado: R$ 0</div>
+          </div>
+        </div>
+      </div>
+      <div class="chart-card" style="grid-column:span 2">
+        <div class="chart-title">📉 Curva ABC de Clientes</div>
+        <div class="chart-sub">Classificação por participação acumulada no faturamento</div>
+        <div class="chart-wrap"><canvas id="vend-chartABC"></canvas></div>
+      </div>
+    </div>
+
+    <div class="table-card">
+      <div class="table-head">
+        <h3>📋 Detalhamento de Vendas</h3>
+        <input class="filter-input" id="vend-busca" placeholder="🔍 Buscar…" style="min-width:160px;" oninput="vendRenderTable()">
+      </div>
+      <div class="tbl-wrap">
+        <table>
+          <thead><tr><th>#</th><th>Data</th><th>Vendedor</th><th>Cliente</th><th>CTRC / Produto</th><th>Peso (Kg)</th><th>Vlr Frete</th><th>Custo/Desc</th><th>Comissão</th><th>% Comis</th><th>Fatura</th><th>Vcto</th><th>Equipe</th></tr></thead>
+          <tbody id="vend-tableBody"></tbody>
+        </table>
+      </div>
+    </div>
+    <div class="dash-footer">Omega 7 Transportes e Logística · Dashboard Comercial de Vendedores</div>
+  </div>
+
+  <!-- Rankings -->
+  <div id="vend-panel-rankings" class="tab-panel">
+    <div class="dash-header"><div><h1>🏆 Rankings Comerciais</h1><p>Top 10 em cada categoria</p></div></div>
+    <div class="charts-row cols-2">
+      <div class="table-card"><div class="table-head"><h3>🥇 Top 10 Vendedores</h3></div><div class="tbl-wrap"><table><thead><tr><th>#</th><th>Vendedor</th><th>Faturamento</th><th>Lucro</th><th>Margem</th><th>Vendas</th></tr></thead><tbody id="vend-rankVendedor"></tbody></table></div></div>
+      <div class="table-card"><div class="table-head"><h3>🥇 Top 10 Produtos</h3></div><div class="tbl-wrap"><table><thead><tr><th>#</th><th>Produto</th><th>Faturamento</th><th>Qtd</th><th>Ticket Médio</th></tr></thead><tbody id="vend-rankProduto"></tbody></table></div></div>
+    </div>
+    <div class="charts-row cols-2">
+      <div class="table-card"><div class="table-head"><h3>🥇 Top 10 Clientes</h3></div><div class="tbl-wrap"><table><thead><tr><th>#</th><th>Cliente</th><th>Faturamento</th><th>Compras</th><th>Última</th></tr></thead><tbody id="vend-rankCliente"></tbody></table></div></div>
+      <div class="table-card"><div class="table-head"><h3>🥇 Top 10 Cidades</h3></div><div class="tbl-wrap"><table><thead><tr><th>#</th><th>Cidade</th><th>UF</th><th>Faturamento</th><th>Pedidos</th></tr></thead><tbody id="vend-rankCidade"></tbody></table></div></div>
+    </div>
+  </div>
+
+  <!-- Import Vendedores -->
+  <div id="vend-panel-upload" class="tab-panel">
+    <div class="panel-inner">
+      <div class="panel-title">📂 Importar Dados de Vendas</div>
+      <div class="panel-desc">Faça upload de um arquivo <strong>.sswweb</strong> (SSW — Demonstrativo de Comissão de Vendedor) ou de uma planilha <strong>.XLSX / .XLS / .CSV</strong>. Os dados serão processados e salvos no Firebase.</div>
+      <div style="display:flex;gap:10px;margin-bottom:16px;">
+        <button class="btn-filter" id="vend-modeSSW" onclick="vendSetMode('ssw')" style="background:var(--accent);color:#fff;">📋 SSW (.sswweb)</button>
+        <button class="btn-filter secondary" id="vend-modeXLS" onclick="vendSetMode('xls')">📊 Planilha (XLSX/CSV)</button>
+      </div>
+      <div class="drop-zone" id="vend-dropZone">
+        <input type="file" id="vend-fileInput" accept=".sswweb,.xlsx,.xls,.csv" style="position:absolute;inset:0;opacity:0;cursor:pointer;width:100%;height:100%;" />
+        <div class="drop-icon" id="vend-dropIcon">📋</div>
+        <div class="drop-main" id="vend-dropMain">Arraste o arquivo SSW aqui</div>
+        <div class="drop-sub">ou <span>clique para selecionar</span> · <span id="vend-dropFormats">.sswweb</span></div>
+      </div>
+      <div class="file-info" id="vend-fileInfo">
+        <div style="font-size:26px">📄</div>
+        <div><div style="font-weight:600;font-size:13px" id="vend-fileName">—</div><div style="font-size:11px;color:var(--muted)" id="vend-fileSize">—</div></div>
+        <div style="margin-left:auto" id="vend-fileStatusIcon">✅</div>
+      </div>
+      <div class="parse-status" id="vend-parseStatus"></div>
+      <div class="mapping-card" id="vend-sswPreviewCard" style="display:none">
+        <h4>Preview — Registros Extraídos do SSW</h4>
+        <div class="preview-table-wrap" id="vend-sswPreviewWrap"><table id="vend-sswPreviewTable" style="font-size:11px;"></table></div>
+      </div>
+      <div class="mapping-card" id="vend-mappingCard" style="display:none">
+        <h4>Mapeamento de Colunas</h4>
+        <div class="mapping-grid" id="vend-mappingGrid"></div>
+        <div class="preview-table-wrap" id="vend-previewTableWrap" style="margin-top:16px;display:none"><table id="vend-previewTable" style="font-size:11px;"></table></div>
+      </div>
+      <div style="display:flex;gap:10px;flex-wrap:wrap;">
+        <button class="btn-primary" id="vend-btnApply" onclick="vendApplyUpload()" disabled>☁ Importar para Firebase</button>
+        <button class="btn-primary btn-danger" id="vend-btnClear" onclick="vendClearFirebase()" style="display:none">🗑️ Limpar Firebase</button>
+      </div>
+      <div class="howto">
+        <h4>Formatos suportados</h4>
+        <ol>
+          <li><strong>SSW (.sswweb)</strong> — Relatório <span class="tag">ssw0343</span> exportado direto do SSW. Parser automático.</li>
+          <li><strong>Planilha (XLSX/XLS/CSV)</strong> — Cabeçalho na primeira linha. Colunas: <span class="tag">Data</span> <span class="tag">Vendedor</span> <span class="tag">Cliente</span> <span class="tag">Valor Venda</span> <span class="tag">Custo</span> <span class="tag">Lucro</span></li>
+        </ol>
+      </div>
+    </div>
+  </div>
+
+  <!-- Export PDF Vendedores -->
+  <div id="vend-panel-export" class="tab-panel">
+    <div class="panel-inner">
+      <div class="panel-title">📄 Exportar Relatório PDF</div>
+      <div class="panel-desc">Gere um PDF completo com KPIs, gráficos, rankings e filtros aplicados.</div>
+      <div class="export-options">
+        <div class="export-card selected" id="vend-opt-a4" onclick="vendSelectExport('a4')"><div class="sel-dot"></div><div class="export-card-icon">📃</div><div class="export-card-title">A4 Retrato</div><div class="export-card-desc">Padrão A4, ideal para impressão.</div></div>
+        <div class="export-card" id="vend-opt-wide" onclick="vendSelectExport('wide')"><div class="sel-dot"></div><div class="export-card-icon">🖥️</div><div class="export-card-title">Paisagem / Wide</div><div class="export-card-desc">Horizontal, melhor para tabelas largas.</div></div>
+      </div>
+      <div class="export-preview">
+        <h4>Elementos a incluir</h4>
+        <div class="preview-row"><div><input class="chk" type="checkbox" id="vend-chk-kpis" checked><label for="vend-chk-kpis">KPIs e métricas</label></div><span style="font-size:11px;color:var(--muted)">Resumo executivo</span></div>
+        <div class="preview-row"><div><input class="chk" type="checkbox" id="vend-chk-charts" checked><label for="vend-chk-charts">Gráficos</label></div><span style="font-size:11px;color:var(--muted)">Evolução, barras, pizza</span></div>
+        <div class="preview-row"><div><input class="chk" type="checkbox" id="vend-chk-rankings" checked><label for="vend-chk-rankings">Rankings Top 10</label></div><span style="font-size:11px;color:var(--muted)">Vendedores, produtos, clientes</span></div>
+        <div class="preview-row"><div><input class="chk" type="checkbox" id="vend-chk-table" checked><label for="vend-chk-table">Tabela de vendas</label></div><span style="font-size:11px;color:var(--muted)">Detalhamento completo</span></div>
+        <div class="preview-row"><div><input class="chk" type="checkbox" id="vend-chk-footer" checked><label for="vend-chk-footer">Rodapé</label></div><span style="font-size:11px;color:var(--muted)">Omega 7 · Dashboard Comercial</span></div>
+      </div>
+      <button class="btn-export" id="vend-btnExport" onclick="vendExportPDF()">⬇️ Gerar e Baixar PDF</button>
+      <div class="progress-bar" id="vend-progressBar"><div class="progress-fill" id="vend-progressFill"></div></div>
+      <div class="export-msg" id="vend-exportMsg"></div>
+    </div>
+  </div>
+</div>
+
+<script>
+// ═══════════════════════════════════════════════════════
+//  NAVEGAÇÃO PRINCIPAL
+// ═══════════════════════════════════════════════════════
+function switchMain(name, btn) {
+  document.querySelectorAll('.main-tab').forEach(b => b.classList.remove('active'));
+  document.querySelectorAll('.main-panel').forEach(p => p.classList.remove('active'));
+  btn.classList.add('active');
+  document.getElementById('main-' + name).classList.add('active');
+  if (name === 'vendedores') {
+    // re-render charts if panel just became visible
+    setTimeout(() => { if (vendVendasFilt.length) vendRenderCharts(); }, 100);
+  }
+}
+
+// ═══════════════════════════════════════════════════════
+//  TOAST & UTILS
+// ═══════════════════════════════════════════════════════
+function toast(msg, color) {
+  const t = document.getElementById('toast');
+  t.textContent = msg;
+  t.style.color = color || 'var(--text)';
+  t.classList.add('show');
+  setTimeout(() => t.classList.remove('show'), 3200);
+}
+function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
+
+// Status nav bar
+function navFbStatus(state, label) {
+  const dot = document.getElementById('nav-fb-dot');
+  const lbl = document.getElementById('nav-fb-label');
+  dot.style.background = { ok: 'var(--gain)', err: 'var(--loss)', loading: 'var(--warn)' }[state] || 'var(--warn)';
+  lbl.textContent = label;
+}
+
+// ═══════════════════════════════════════════════════════
+//  OMG 7 — MONITORAÇÃO DE CLIENTES
+// ═══════════════════════════════════════════════════════
+let omgClients = [
+  { name: "JCM NITEROI (Total Grupo)", p1: 60015.19, p2: 155395.51, p3: 136330.81, cres: -10, ctrc: 228, peso: 35779, rc: 83 },
+  { name: "FORSETI COMERCIAL",         p1: 19317.21, p2: 48634.39,  p3: 26517.08,  cres: -7,  ctrc: 53,  peso: 82285, rc: -40 },
+  { name: "RC CAMPOS DISTRIBUIÇÃO",    p1: 18160.31, p2: 60253.32,  p3: 20682.81,  cres: -30, ctrc: 109, peso: 30763, rc: 61 },
+  { name: "GF PNEUS (Total Grupo)",    p1: 19006.46, p2: 22567.39,  p3: 44666.58,  cres: null,ctrc: 119, peso: 25721, rc: null },
+  { name: "ITR COMÉRCIO",              p1: 15510.39, p2: 22685.93,  p3: 2709.82,   cres: 60,  ctrc: 64,  peso: 23009, rc: 74 },
+  { name: "INTEGRA BRASIL",            p1: 15327.24, p2: 4840.61,   p3: 4801.15,   cres: 639, ctrc: 7,   peso: 22508, rc: 77 },
+  { name: "LNF COMERCIAL",             p1: 17592.78, p2: 20851.21,  p3: 41551.79,  cres: null,ctrc: 102, peso: 24448, rc: null },
+  { name: "SIQUEIRA CAMP (DQX 0003)",  p1: 6552.64,  p2: 2452.49,   p3: 1918.94,   cres: 523, ctrc: 9,   peso: 12240, rc: -1 },
+  { name: "CPX DISTRIBUIÇÃO (0064)",   p1: 5316.74,  p2: 7613.23,   p3: 3634.07,   cres: 63,  ctrc: 31,  peso: 8061,  rc: 75 },
+  { name: "SUPERPEL COMERCIAL",        p1: 4289.80,  p2: 678.24,    p3: 4662.82,   cres: 1376,ctrc: 22,  peso: 5199,  rc: 63 },
+  { name: "J.C.M. NITEROI R.",         p1: 4828.91,  p2: 646.42,    p3: 4080.35,   cres: 1643,ctrc: 3,   peso: 2148,  rc: 93 },
+  { name: "FORM BOB PAPEL",            p1: 2929.32,  p2: 23107.34,  p3: 7437.12,   cres: -70, ctrc: 3,   peso: 4081,  rc: 68 },
+  { name: "C.H. CARVALHO",             p1: 2410.32,  p2: 738.39,    p3: 2185.01,   cres: 662, ctrc: 7,   peso: 3190,  rc: 78 },
+  { name: "ZEEK (Total Grupo)",        p1: 2030.84,  p2: 816.39,    p3: 2145.64,   cres: 480, ctrc: 20,  peso: 3096,  rc: 72 },
+  { name: "ALPHA TIRE",                p1: 0,        p2: 8063.18,   p3: 17549.71,  cres: null,ctrc: 0,   peso: 0,     rc: null },
+  { name: "REDE MANAUS",               p1: 0,        p2: 7698.07,   p3: 37244.42,  cres: null,ctrc: 0,   peso: 0,     rc: null },
+];
+let omgPeriods = { p1: 'Jun/2026', p2: 'Mai/2026', p3: 'Abr/2026' };
+let omgMeta    = { empresa: 'Omega 7 Transportes e Logística', unidade: 'DQX', gerado: '13/06/2026', crescimento: 6.1 };
+let omgTotals  = { p1: { frete: 186754.92, ctrc: 713, peso: 267673 }, p2: { frete: 410664.51, ctrc: 1616, peso: 437759 }, p3: { frete: 355112.45, ctrc: 1764, peso: 337712 } };
+let omgCharts  = {};
+let omgExportMode = 'a4';
+let omgParsedData = null;
+
+const omgFmt  = v => v.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL', maximumFractionDigits: 0 });
+const omgFmtN = v => v.toLocaleString('pt-BR');
+const omgPct  = (a, b) => b === 0 ? null : Math.round(((a - b) / b) * 100);
+
+function omgSwitchTab(name, btn) {
+  document.querySelectorAll('#main-omg7 .tab-btn').forEach(b => b.classList.remove('active'));
+  document.querySelectorAll('#main-omg7 .tab-panel').forEach(p => p.classList.remove('active'));
+  btn.classList.add('active');
+  document.getElementById('omg-panel-' + name).classList.add('active');
+}
+
+function omgRenderDashboard() {
+  document.getElementById('omg-dash-title').textContent = '🚛 ' + omgMeta.empresa + ' — Monitoração de Clientes';
+  document.getElementById('omg-dash-subtitle').textContent = 'SSW 0663 · Unidade ' + omgMeta.unidade + ' · Gerado em ' + omgMeta.gerado;
+  const crescSign = omgMeta.crescimento >= 0 ? '▲' : '▼';
+  const badgeEl = document.getElementById('omg-badge-cres');
+  badgeEl.textContent = crescSign + ' ' + Math.abs(omgMeta.crescimento).toFixed(1) + '% Crescimento Frete';
+  badgeEl.className = 'badge ' + (omgMeta.crescimento >= 0 ? 'badge-gain' : 'badge-loss');
+  document.getElementById('omg-leg-apr').textContent = omgPeriods.p3;
+  document.getElementById('omg-leg-may').textContent = omgPeriods.p2;
+  document.getElementById('omg-leg-jun').textContent = omgPeriods.p1;
+  document.getElementById('omg-th-p1').textContent = 'Frete ' + omgPeriods.p1.split('/')[0];
+  document.getElementById('omg-th-p2').textContent = 'Frete ' + omgPeriods.p2.split('/')[0];
+  document.getElementById('omg-th-p3').textContent = 'Frete ' + omgPeriods.p3.split('/')[0];
+  document.getElementById('omg-donut-title').textContent = 'Participação no Frete — ' + omgPeriods.p1;
+
+  const cP1P2 = omgPct(omgTotals.p1.frete, omgTotals.p2.frete);
+  const cP2P3 = omgPct(omgTotals.p2.frete, omgTotals.p3.frete);
+  const cCtrc = omgPct(omgTotals.p1.ctrc, omgTotals.p3.ctrc);
+  const top3gain = [...omgClients].filter(c => c.cres > 0).sort((a,b) => b.cres - a.cres).slice(0,2);
+
+  document.getElementById('omg-kpi-grid').innerHTML = `
+    <div class="kpi-card" style="--kpi-color:var(--jun)"><div class="kpi-label">Frete Total — ${omgPeriods.p1}</div><div class="kpi-value">${omgFmt(omgTotals.p1.frete)}</div><div class="kpi-delta ${cP1P2>=0?'up':'down'}">${cP1P2>=0?'▲':'▼'} ${Math.abs(cP1P2)}% vs ${omgPeriods.p2.split('/')[0]}</div><div class="kpi-sub">${omgFmtN(omgTotals.p1.ctrc)} CTRCs · ${omgFmtN(omgTotals.p1.peso)} kg</div></div>
+    <div class="kpi-card" style="--kpi-color:var(--may)"><div class="kpi-label">Frete Total — ${omgPeriods.p2}</div><div class="kpi-value">${omgFmt(omgTotals.p2.frete)}</div><div class="kpi-delta ${cP2P3>=0?'up':'down'}">${cP2P3>=0?'▲':'▼'} ${Math.abs(cP2P3)}% vs ${omgPeriods.p3.split('/')[0]}</div><div class="kpi-sub">${omgFmtN(omgTotals.p2.ctrc)} CTRCs · ${omgFmtN(omgTotals.p2.peso)} kg</div></div>
+    <div class="kpi-card" style="--kpi-color:var(--apr)"><div class="kpi-label">Frete Total — ${omgPeriods.p3}</div><div class="kpi-value">${omgFmt(omgTotals.p3.frete)}</div><div class="kpi-delta neutral">Base do período</div><div class="kpi-sub">${omgFmtN(omgTotals.p3.ctrc)} CTRCs · ${omgFmtN(omgTotals.p3.peso)} kg</div></div>
+    <div class="kpi-card" style="--kpi-color:${cCtrc<=0?'var(--loss)':'var(--gain)'}"><div class="kpi-label">Var. Volume ${omgPeriods.p3.split('/')[0]}→${omgPeriods.p1.split('/')[0]}</div><div class="kpi-value">${cCtrc>0?'+':''}${cCtrc}%</div><div class="kpi-sub">CTRCs: ${omgFmtN(omgTotals.p3.ctrc)} → ${omgFmtN(omgTotals.p1.ctrc)}</div></div>
+    <div class="kpi-card" style="--kpi-color:${omgMeta.crescimento>=0?'var(--gain)':'var(--loss)'}"><div class="kpi-label">Crescimento Frete ${omgPeriods.p1.split('/')[0]}</div><div class="kpi-value" style="font-size:26px">${omgMeta.crescimento>=0?'+':''}${omgMeta.crescimento.toFixed(1)}%</div><div class="kpi-sub">vs ${omgPeriods.p2}</div></div>
+    <div class="kpi-card" style="--kpi-color:var(--gain)"><div class="kpi-label">Maiores Altas ${omgPeriods.p1.split('/')[0]}</div><div class="kpi-value" style="font-size:13px;margin-top:4px">${top3gain.map(c=>c.name.split(' ')[0]+' +'+c.cres+'%').join('<br>')}</div></div>
+  `;
+  omgRenderTable('all');
+  omgRenderCharts();
+  document.getElementById('omg-dash-footer').textContent = omgMeta.empresa + ' · SSW 0663 · 075 - Monitoração de Clientes · ' + omgMeta.unidade;
+}
+
+function omgRenderTable(filter) {
+  const body = document.getElementById('omg-tableBody');
+  const filtered = omgClients.filter(c => {
+    if (filter === 'gain') return c.cres !== null && c.cres > 0;
+    if (filter === 'loss') return c.cres !== null && c.cres < 0;
+    if (filter === 'zero') return c.p1 === 0 || (c.p2 === 0 && c.p3 === 0);
+    return true;
+  });
+  body.innerHTML = filtered.map(c => {
+    let cresHtml = '<span style="color:var(--muted)">—</span>';
+    if (c.cres !== null && c.cres !== 0) {
+      const cls = c.cres > 0 ? 'cres-up' : 'cres-down';
+      cresHtml = `<span class="cres-cell ${cls}">${c.cres > 0 ? '▲' : '▼'} ${c.cres}%</span>`;
+    } else if (c.cres === 0) {
+      cresHtml = `<span class="cres-cell cres-neutral">novo</span>`;
+    }
+    return `<tr>
+      <td title="${c.name}">${c.name}</td>
+      <td style="font-family:'JetBrains Mono',monospace;color:var(--jun)">${c.p1>0?omgFmt(c.p1):'—'}</td>
+      <td style="font-family:'JetBrains Mono',monospace;color:var(--may)">${c.p2>0?omgFmt(c.p2):'—'}</td>
+      <td style="font-family:'JetBrains Mono',monospace;color:var(--apr)">${c.p3>0?omgFmt(c.p3):'—'}</td>
+      <td style="text-align:center">${cresHtml}</td>
+      <td style="font-family:'JetBrains Mono',monospace">${omgFmtN(c.ctrc)}</td>
+      <td style="font-family:'JetBrains Mono',monospace">${omgFmtN(c.peso)}</td>
+      <td style="font-family:'JetBrains Mono',monospace">${c.rc!==null&&c.rc!==0?c.rc+'%':'—'}</td>
+    </tr>`;
+  }).join('');
+}
+
+function omgFilterTable(type, btn) {
+  document.querySelectorAll('#main-omg7 .filter-btn').forEach(b => b.className = 'filter-btn');
+  if (type === 'gain') btn.classList.add('active-gain');
+  else if (type === 'loss') btn.classList.add('active-loss');
+  else btn.classList.add('active');
+  omgRenderTable(type);
+}
+
+function omgDestroyCharts() {
+  Object.values(omgCharts).forEach(c => { try { c.destroy(); } catch(e){} });
+  omgCharts = {};
+}
+
+function omgRenderCharts() {
+  omgDestroyCharts();
+  const top12 = omgClients.slice(0, 12);
+  const palette = ['#58a6ff','#3fb950','#d2a8ff','#e3b341','#f85149','#79c0ff','#a5d6ff','#ffa657','#8b949e'];
+  omgCharts.bar = new Chart(document.getElementById('omg-chartBar'), {
+    type: 'bar',
+    data: { labels: top12.map(c => c.name.length>16?c.name.slice(0,14)+'…':c.name), datasets: [
+      { label: omgPeriods.p3, data: top12.map(c=>c.p3), backgroundColor:'rgba(88,166,255,0.65)', borderRadius:3 },
+      { label: omgPeriods.p2, data: top12.map(c=>c.p2), backgroundColor:'rgba(210,168,255,0.65)', borderRadius:3 },
+      { label: omgPeriods.p1, data: top12.map(c=>c.p1), backgroundColor:'rgba(63,185,80,0.75)', borderRadius:3 },
+    ]},
+    options: { responsive:true, maintainAspectRatio:false,
+      plugins:{ legend:{labels:{color:'#8b949e',font:{size:11}}}, tooltip:{callbacks:{label:ctx=>` ${ctx.dataset.label}: ${omgFmt(ctx.raw)}`}} },
+      scales:{ x:{ticks:{color:'#8b949e',font:{size:10},maxRotation:30},grid:{color:'rgba(45,51,59,0.5)'}}, y:{ticks:{color:'#8b949e',font:{size:10},callback:v=>'R$'+(v>=1000?(v/1000).toFixed(0)+'k':v)},grid:{color:'rgba(45,51,59,0.4)'}} }
+    }
+  });
+  omgCharts.line = new Chart(document.getElementById('omg-chartLine'), {
+    type: 'line',
+    data: { labels: [omgPeriods.p3,omgPeriods.p2,omgPeriods.p1], datasets: [
+      { label:'Frete Total', data:[omgTotals.p3.frete,omgTotals.p2.frete,omgTotals.p1.frete], borderColor:'#58a6ff', backgroundColor:'rgba(88,166,255,0.1)', fill:true, tension:0.35, pointRadius:6, borderWidth:2.5 },
+      { label:'CTRCs', data:[omgTotals.p3.ctrc,omgTotals.p2.ctrc,omgTotals.p1.ctrc], yAxisID:'y2', borderColor:'#3fb950', fill:false, tension:0.35, pointRadius:5, borderWidth:2, borderDash:[4,3] }
+    ]},
+    options:{ responsive:true, maintainAspectRatio:false,
+      plugins:{legend:{labels:{color:'#8b949e',font:{size:11}}},tooltip:{callbacks:{label:ctx=>ctx.dataset.yAxisID==='y2'?` CTRCs: ${ctx.raw}`:` ${omgFmt(ctx.raw)}`}}},
+      scales:{x:{ticks:{color:'#8b949e',font:{size:11}},grid:{color:'rgba(45,51,59,0.4)'}},y:{ticks:{color:'#8b949e',font:{size:10},callback:v=>'R$'+(v/1000).toFixed(0)+'k'},grid:{color:'rgba(45,51,59,0.4)'},position:'left'},y2:{ticks:{color:'#3fb950',font:{size:10}},grid:{display:false},position:'right'}}
+    }
+  });
+  const crescClients = [...omgClients].filter(c=>c.cres!==null&&c.cres!==0).sort((a,b)=>b.cres-a.cres).slice(0,14);
+  omgCharts.cres = new Chart(document.getElementById('omg-chartCres'), {
+    type:'bar',
+    data:{ labels:crescClients.map(c=>c.name.length>14?c.name.slice(0,12)+'…':c.name), datasets:[{label:'% CRES',data:crescClients.map(c=>c.cres),backgroundColor:crescClients.map(c=>c.cres>0?'rgba(63,185,80,0.7)':'rgba(248,81,73,0.7)'),borderRadius:4}]},
+    options:{indexAxis:'y',responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false},tooltip:{callbacks:{label:ctx=>` ${ctx.raw>0?'▲':'▼'} ${ctx.raw}%`}}},scales:{x:{ticks:{color:'#8b949e',font:{size:10},callback:v=>v+'%'},grid:{color:'rgba(45,51,59,0.4)'}},y:{ticks:{color:'#e6edf3',font:{size:10}},grid:{color:'rgba(45,51,59,0.3)'}}}}
+  });
+  const top8 = [...omgClients].filter(c=>c.p1>0).sort((a,b)=>b.p1-a.p1).slice(0,8);
+  const outros = [...omgClients].filter(c=>c.p1>0).sort((a,b)=>b.p1-a.p1).slice(8).reduce((s,c)=>s+c.p1,0);
+  omgCharts.donut = new Chart(document.getElementById('omg-chartDoughnut'), {
+    type:'doughnut',
+    data:{labels:[...top8.map(c=>c.name.length>16?c.name.slice(0,14)+'…':c.name),'Outros'],datasets:[{data:[...top8.map(c=>c.p1),outros],backgroundColor:palette,borderWidth:2,borderColor:'#1c2128',hoverOffset:6}]},
+    options:{responsive:true,maintainAspectRatio:false,cutout:'62%',plugins:{legend:{position:'right',labels:{color:'#8b949e',font:{size:10},padding:8,boxWidth:10}},tooltip:{callbacks:{label:ctx=>{const tot=ctx.dataset.data.reduce((a,b)=>a+b,0);return ` ${ctx.label}: ${omgFmt(ctx.raw)} (${((ctx.raw/tot)*100).toFixed(1)}%)`;}}}}}
+  });
+}
+
+// OMG Upload
+const omgDropZone = document.getElementById('omg-dropZone');
+const omgFileInput = document.getElementById('omg-fileInput');
+omgDropZone.addEventListener('dragover', e=>{e.preventDefault();omgDropZone.classList.add('drag-over');});
+omgDropZone.addEventListener('dragleave', ()=>omgDropZone.classList.remove('drag-over'));
+omgDropZone.addEventListener('drop', e=>{e.preventDefault();omgDropZone.classList.remove('drag-over');const f=e.dataTransfer.files[0];if(f)omgHandleFile(f);});
+omgFileInput.addEventListener('change', e=>{if(e.target.files[0])omgHandleFile(e.target.files[0]);});
+
+function omgHandleFile(file) {
+  document.getElementById('omg-fileName').textContent = file.name;
+  document.getElementById('omg-fileSize').textContent = (file.size/1024).toFixed(1)+' KB';
+  document.getElementById('omg-fileInfo').classList.add('show');
+  document.getElementById('omg-fileStatusIcon').textContent = '⏳';
+  omgShowStatus('info','🔄 Lendo e interpretando arquivo…');
+  document.getElementById('omg-btnApply').disabled = true;
+  omgParsedData = null;
+  const reader = new FileReader();
+  reader.onload = e => {
+    try {
+      omgParsedData = omgParseSSW(e.target.result);
+      document.getElementById('omg-fileStatusIcon').textContent = '✅';
+      omgShowStatus('ok',`✅ ${omgParsedData.clients.length} clientes · Períodos: ${omgParsedData.periods.p3} / ${omgParsedData.periods.p2} / ${omgParsedData.periods.p1}`);
+      document.getElementById('omg-btnApply').disabled = false;
+    } catch(err) {
+      document.getElementById('omg-fileStatusIcon').textContent = '❌';
+      omgShowStatus('err','❌ Erro: '+err.message);
+    }
+  };
+  reader.readAsText(file,'latin1');
+}
+function omgShowStatus(type,msg){const el=document.getElementById('omg-parseStatus');el.className='parse-status '+type;el.textContent=msg;}
+function omgParseSSW(text){
+  const lines=text.split('\n');
+  const periodLine=lines.find(l=>/\d{2}\/\d{4}/.test(l)&&l.includes('2026'));
+  const pm=periodLine?[...periodLine.matchAll(/(\d{2}\/\d{4})/g)].map(m=>m[1]):[];
+  const mesToNome=s=>{const ms=['Jan','Fev','Mar','Abr','Mai','Jun','Jul','Ago','Set','Out','Nov','Dez'];const[mm,yyyy]=s.split('/');return ms[parseInt(mm)-1]+'/'+yyyy;};
+  const p1=pm[0]?mesToNome(pm[0]):'P1',p2=pm[1]?mesToNome(pm[1]):'P2',p3=pm[2]?mesToNome(pm[2]):'P3';
+  const unidLine=lines.find(l=>/UNIDADE RESP:/.test(l));
+  const unidade=unidLine?(unidLine.match(/UNIDADE RESP:\s*(\w+)/)||[])[1]||'DQX':'DQX';
+  const crescLine=lines.find(l=>/CRESCIMENTO DO FRETE/.test(l));
+  const crescMatch=crescLine?crescLine.match(/([\-\d,\.]+)%/):null;
+  const crescimento=crescMatch?parseFloat(crescMatch[1].replace(',','.')):0;
+  const parseVal=s=>s?parseFloat(s.replace(/\./g,'').replace(',','.'))||0:0;
+  const rowRe=/(?:(\d{5})\s+)?DQX\s+\d{4}\s+\d{14}\s+(.{13})\s+\S+(?:\s+\S+)?\s+(\d+)\s+([\d\.]+)\s+([\d\.]+)\s+([\d\.,]+)\s+(\d+)\s+([\d\.]+)\s+([\d\.]+)\s+([\d\.,]+)(?:\s+([\d\.]+)\s+([\d\.]+)\s+([\d\.,]+))?/;
+  const parsedClients=[],seen=new Set();
+  lines.forEach(line=>{
+    if(/^[-=\s*]+$/.test(line.trim())||/CLIENTE|CTRC|TODOS|VENDEDOR|TOTAL DO GRUPO|CRESCIMENTO/.test(line))return;
+    const m=line.match(rowRe);
+    if(m){const name=m[2].trim();if(!name||seen.has(name))return;const p1f=parseVal(m[6]),p2f=m[10]?parseVal(m[10]):0,p3f=m[13]?parseVal(m[13]):0;if(p1f>0||p2f>0||p3f>0){seen.add(name);parsedClients.push({name,p1:p1f,p2:p2f,p3:p3f,cres:null,ctrc:parseInt(m[3])||0,peso:parseFloat(m[4].replace('.','')||0),rc:null});}}
+  });
+  if(!parsedClients.length)throw new Error('Nenhum cliente encontrado.');
+  return{clients:parsedClients,periods:{p1,p2,p3},meta:{empresa:'Omega 7 Transportes',unidade,gerado:new Date().toLocaleDateString('pt-BR'),crescimento},totals:omgTotals};
+}
+async function omgApplyUpload(){
+  if(!omgParsedData)return;
+  omgClients=omgParsedData.clients;omgPeriods=omgParsedData.periods;omgMeta=omgParsedData.meta;
+  omgRenderDashboard();
+  if(window.__firebase){try{await window.__firebase.salvar({clients:omgClients,periods:omgPeriods,meta:omgMeta,totals:omgTotals});navFbStatus('ok','☁ Salvo');}catch(e){navFbStatus('err','✗ Erro');}}
+  omgSwitchTab('dashboard',document.querySelector('#main-omg7 .tab-btn'));
+}
+
+function omgSelectExport(mode){omgExportMode=mode;document.querySelectorAll('#main-omg7 .export-card').forEach(c=>c.classList.remove('selected'));document.getElementById('omg-opt-'+mode).classList.add('selected');}
+
+async function omgExportPDF(){
+  const{jsPDF}=window.jspdf;
+  const isWide=omgExportMode==='wide';
+  const pdf=new jsPDF({orientation:isWide?'landscape':'portrait',unit:'mm',format:'a4'});
+  const W=pdf.internal.pageSize.getWidth(),H=pdf.internal.pageSize.getHeight(),margin=12,contentW=W-margin*2;
+  const btn=document.getElementById('omg-btnExport');btn.disabled=true;
+  const setP=(p,t)=>{document.getElementById('omg-progressFill').style.width=p+'%';const m=document.getElementById('omg-exportMsg');m.className='export-msg show';m.textContent=t;};
+  document.getElementById('omg-progressBar').classList.add('show');
+  pdf.setFillColor(13,17,23);pdf.rect(0,0,W,H,'F');
+  let y=12;
+  setP(10,'📄 Preparando…');await sleep(80);
+  if(document.getElementById('omg-chk-header').checked){
+    pdf.setFont('helvetica','bold');pdf.setFontSize(14);pdf.setTextColor(230,237,243);
+    pdf.text('Omega 7 Transportes — Monitoração de Clientes',margin,y);y+=6;
+    pdf.setFont('helvetica','normal');pdf.setFontSize(8);pdf.setTextColor(139,148,158);
+    pdf.text(`SSW 0663 · Unidade ${omgMeta.unidade} · Gerado em ${omgMeta.gerado}`,margin,y);y+=8;
+    const kpis=[{l:`Frete ${omgPeriods.p1}`,v:omgFmt(omgTotals.p1.frete),c:[63,185,80]},{l:`Frete ${omgPeriods.p2}`,v:omgFmt(omgTotals.p2.frete),c:[210,168,255]},{l:`Frete ${omgPeriods.p3}`,v:omgFmt(omgTotals.p3.frete),c:[88,166,255]}];
+    const kW=(contentW-8)/3;
+    kpis.forEach((k,i)=>{const kx=margin+i*(kW+4);pdf.setFillColor(28,33,40);pdf.roundedRect(kx,y,kW,14,2,2,'F');pdf.setDrawColor(45,51,59);pdf.roundedRect(kx,y,kW,14,2,2,'S');pdf.setFont('helvetica','normal');pdf.setFontSize(7);pdf.setTextColor(139,148,158);pdf.text(k.l,kx+3,y+4);pdf.setFont('helvetica','bold');pdf.setFontSize(10);pdf.setTextColor(...k.c);pdf.text(k.v,kx+3,y+11);});
+    y+=18;
+  }
+  if(document.getElementById('omg-chk-charts').checked){
+    setP(40,'📈 Capturando gráficos…');await sleep(120);
+    const cans=['omg-chartBar','omg-chartLine','omg-chartCres','omg-chartDoughnut'];
+    const titles=['Frete por Cliente','Evolução Geral','CRES %','Participação'];
+    const cW=(contentW-4)/2,cH=48;
+    for(let i=0;i<cans.length;i++){
+      const canvas=document.getElementById(cans[i]);const img=canvas.toDataURL('image/png',0.95);
+      const cx=margin+(i%2)*(cW+4),cy=y+Math.floor(i/2)*(cH+6);
+      pdf.setFillColor(28,33,40);pdf.roundedRect(cx,cy,cW,cH,2,2,'F');pdf.setDrawColor(45,51,59);pdf.roundedRect(cx,cy,cW,cH,2,2,'S');
+      pdf.setFont('helvetica','bold');pdf.setFontSize(7);pdf.setTextColor(230,237,243);pdf.text(titles[i],cx+3,cy+5);
+      pdf.addImage(img,'PNG',cx+2,cy+7,cW-4,cH-9);await sleep(60);
+    }
+    y+=cH*2+18;
+  }
+  if(document.getElementById('omg-chk-table').checked){
+    setP(75,'📋 Gerando tabela…');await sleep(60);
+    if(y+20>H-20){pdf.addPage();y=14;pdf.setFillColor(13,17,23);pdf.rect(0,0,W,H,'F');}
+    pdf.setFont('helvetica','bold');pdf.setFontSize(9);pdf.setTextColor(230,237,243);pdf.text('Detalhamento por Cliente',margin,y);y+=5;
+    const cols=[{label:'Cliente',w:isWide?58:50},{label:`Frete ${omgPeriods.p1}`,w:28},{label:`Frete ${omgPeriods.p2}`,w:28},{label:`Frete ${omgPeriods.p3}`,w:28},{label:'CRES%',w:16},{label:'CTRCs',w:14}];
+    const tW=cols.reduce((s,c)=>s+c.w,0);
+    pdf.setFillColor(22,27,34);pdf.rect(margin,y,tW,7,'F');pdf.setFont('helvetica','bold');pdf.setFontSize(6.5);pdf.setTextColor(139,148,158);
+    let cx=margin;cols.forEach(c=>{pdf.text(c.label,cx+2,y+4.5);cx+=c.w;});y+=7;
+    omgClients.forEach((c,idx)=>{
+      if(y+5.8>H-12){pdf.addPage();y=14;pdf.setFillColor(13,17,23);pdf.rect(0,0,W,H,'F');cx=margin;pdf.setFillColor(22,27,34);pdf.rect(margin,y,tW,7,'F');pdf.setFont('helvetica','bold');pdf.setFontSize(6.5);pdf.setTextColor(139,148,158);cols.forEach(c=>{pdf.text(c.label,cx+2,y+4.5);cx+=c.w;});y+=7;}
+      if(idx%2===0){pdf.setFillColor(20,25,32);pdf.rect(margin,y,tW,5.8,'F');}
+      pdf.setFont('helvetica','normal');pdf.setFontSize(6.5);pdf.setTextColor(230,237,243);
+      const row=[c.name.length>26?c.name.slice(0,24)+'…':c.name,c.p1>0?omgFmt(c.p1):'—',c.p2>0?omgFmt(c.p2):'—',c.p3>0?omgFmt(c.p3):'—',c.cres!==null?(c.cres>0?'+':'')+c.cres+'%':'—',String(c.ctrc)];
+      let rx=margin;row.forEach((v,vi)=>{if(vi===4&&c.cres!==null){pdf.setTextColor(c.cres>0?63:248,c.cres>0?185:81,c.cres>0?80:73);}else{pdf.setTextColor(230,237,243);}pdf.text(v,rx+2,y+4);rx+=cols[vi].w;});
+      pdf.setDrawColor(45,51,59);pdf.line(margin,y+5.8,margin+tW,y+5.8);y+=5.8;
+    });
+  }
+  const tp=pdf.internal.getNumberOfPages();
+  for(let p=1;p<=tp;p++){pdf.setPage(p);if(document.getElementById('omg-chk-footer').checked){pdf.setFillColor(22,27,34);pdf.rect(0,H-10,W,10,'F');pdf.setFont('helvetica','normal');pdf.setFontSize(6.5);pdf.setTextColor(139,148,158);pdf.text(`${omgMeta.empresa} · SSW 0663 · Monitoração de Clientes · ${omgMeta.unidade}`,margin,H-4);pdf.text(`Pág. ${p} / ${tp}`,W-margin-14,H-4);}}
+  setP(97,'💾 Salvando…');await sleep(80);
+  pdf.save(`Omega7_Monitor_${omgPeriods.p1.replace('/','-')}.pdf`);
+  setP(100,'✅ PDF baixado!');document.getElementById('omg-exportMsg').style.color='var(--gain)';btn.disabled=false;
+}
+
+// ═══════════════════════════════════════════════════════
+//  VENDEDORES — DASHBOARD COMERCIAL
+// ═══════════════════════════════════════════════════════
+let vendVendasRaw = [], vendVendasFilt = [], vendParsedRows = [], vendSheetHeaders = [];
+let vendImportMode = 'ssw', vendSswParsed = [];
+let vendCharts = {}, vendExportMode = 'a4';
+
+const CAMPOS = ['data','vendedor','cliente','produto','quantidade','valorVenda','custo','lucro','cidade','estado','canal'];
+const LABELS  = ['Data','Vendedor','Cliente','Produto','Quantidade','Valor Venda','Custo','Lucro','Cidade','Estado','Canal'];
+
+const vendFmtBRL = v => { if(v==null||isNaN(v))return '—'; return v.toLocaleString('pt-BR',{style:'currency',currency:'BRL',maximumFractionDigits:0}); };
+const vendFmtN   = v => v==null?'—':Number(v).toLocaleString('pt-BR');
+const vendFmtPct = v => v==null?'—':v.toFixed(1)+'%';
+const vendClamp  = (v,mn,mx) => Math.max(mn,Math.min(mx,v));
+
+function vendSwitchTab(name, btn) {
+  document.querySelectorAll('#main-vendedores .tab-btn').forEach(b => b.classList.remove('active'));
+  document.querySelectorAll('#main-vendedores .tab-panel').forEach(p => p.classList.remove('active'));
+  btn.classList.add('active');
+  document.getElementById('vend-panel-' + name).classList.add('active');
+  if (name === 'rankings') vendRenderRankings();
+}
+
+function vendFbStatus(state, label) {
+  const dot = document.getElementById('vend-fb-dot');
+  const lbl = document.getElementById('vend-fb-label');
+  dot.style.background = { ok:'var(--gain)', err:'var(--loss)', loading:'var(--warn)' }[state]||'var(--warn)';
+  lbl.textContent = label;
+}
+
+const vendFbReady = new Promise(res => {
+  if (window.__fbVendasReady) res();
+  else window.__fbVendasResolve = res;
+});
+
+async function vendLoadFromFirebase() {
+  try {
+    await vendFbReady;
+    vendFbStatus('loading','Carregando…');
+    vendVendasRaw = await window.__fbVendas.carregarVendas();
+    vendVendasRaw = vendVendasRaw.map(vendNormalizeRow);
+    vendFbStatus('ok',`☁ ${vendVendasRaw.length} registros`);
+    vendPopulateFilters();vendApplyFilters();
+    document.getElementById('vend-btnClear').style.display = vendVendasRaw.length?'inline-flex':'none';
+    document.getElementById('vend-dash-date').textContent = new Date().toLocaleDateString('pt-BR');
+    document.getElementById('vend-dash-rec').textContent = vendVendasRaw.length+' registros';
+  } catch(e) { vendFbStatus('err','✗ Offline'); }
+}
+
+function vendNormalizeRow(r) {
+  return { id:r.id||'', data:r.data||'', vendedor:(r.vendedor||'').trim(), cliente:(r.cliente||'').trim(), produto:(r.produto||'').trim(), quantidade:parseFloat(r.quantidade)||0, valorVenda:parseFloat(r.valorVenda)||0, custo:parseFloat(r.custo)||0, lucro:parseFloat(r.lucro)||0, cidade:(r.cidade||'').trim(), estado:(r.estado||'').trim(), canal:(r.canal||'').trim() };
+}
+
+function vendParseDate(s) {
+  if(!s)return null;
+  if(typeof s==='number'){const d=new Date(Math.round((s-25569)*86400*1000));return isNaN(d)?null:d;}
+  s=String(s).trim();
+  let m=s.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);if(m)return new Date(+m[3],+m[2]-1,+m[1]);
+  m=s.match(/^(\d{1,2})\/(\d{1,2})\/(\d{2})$/);if(m){const yy=+m[3];return new Date(2000+yy,+m[2]-1,+m[1]);}
+  m=s.match(/^(\d{4})-(\d{2})-(\d{2})/);if(m)return new Date(+m[1],+m[2]-1,+m[3]);
+  const d=new Date(s);return isNaN(d)?null:d;
+}
+
+function vendPopulateFilters() {
+  const unique=(field)=>[...new Set(vendVendasRaw.map(r=>r[field]).filter(Boolean))].sort();
+  const months=[...new Set(vendVendasRaw.map(r=>{if(!r.data)return'';const d=vendParseDate(r.data);if(!d)return'';return(d.getMonth()+1).toString().padStart(2,'0')+'/'+d.getFullYear();}).filter(Boolean))].sort();
+  const anos=[...new Set(vendVendasRaw.map(r=>{if(!r.data)return'';const d=vendParseDate(r.data);return d?d.getFullYear().toString():'';}).filter(Boolean))].sort();
+  const fill=(id,opts)=>{const el=document.getElementById(id);const cur=el.value;el.innerHTML='<option value="">Todos</option>'+opts.map(o=>`<option value="${o}">${o}</option>`).join('');el.value=cur;};
+  fill('vend-f-periodo',months);fill('vend-f-ano',anos);fill('vend-f-vendedor',unique('vendedor'));fill('vend-f-produto',unique('produto'));fill('vend-f-estado',unique('estado'));fill('vend-f-canal',unique('canal'));
+}
+
+function vendApplyFilters() {
+  const fP=document.getElementById('vend-f-periodo').value,fA=document.getElementById('vend-f-ano').value,fV=document.getElementById('vend-f-vendedor').value,fPr=document.getElementById('vend-f-produto').value,fE=document.getElementById('vend-f-estado').value,fC=document.getElementById('vend-f-canal').value;
+  vendVendasFilt=vendVendasRaw.filter(r=>{
+    const d=vendParseDate(r.data);const mes=d?(d.getMonth()+1).toString().padStart(2,'0')+'/'+d.getFullYear():'';const ano=d?d.getFullYear().toString():'';
+    if(fP&&mes!==fP)return false;if(fA&&ano!==fA)return false;if(fV&&r.vendedor!==fV)return false;if(fPr&&r.produto!==fPr)return false;if(fE&&r.estado!==fE)return false;if(fC&&r.canal!==fC)return false;return true;
+  });
+  vendRenderKPIs();vendRenderCharts();vendRenderTable();vendUpdateGauge();
+}
+function vendClearFilters(){['vend-f-periodo','vend-f-ano','vend-f-vendedor','vend-f-produto','vend-f-estado','vend-f-canal'].forEach(id=>document.getElementById(id).value='');vendApplyFilters();}
+
+function vendRenderKPIs() {
+  const v=vendVendasFilt;
+  const fat=v.reduce((s,r)=>s+r.valorVenda,0),lucro=v.reduce((s,r)=>s+r.lucro,0),qtd=v.reduce((s,r)=>s+r.quantidade,0),ticket=v.length?fat/v.length:0,margem=fat?(lucro/fat*100):0;
+  const clientes=[...new Set(v.map(r=>r.cliente).filter(Boolean))];const recorrentes=clientes.filter(c=>v.filter(r=>r.cliente===c).length>1).length;
+  document.getElementById('vend-kpi-fat').textContent=vendFmtBRL(fat);document.getElementById('vend-kpi-fat-sub').textContent=v.length+' vendas';
+  document.getElementById('vend-kpi-lucro').textContent=vendFmtBRL(lucro);document.getElementById('vend-kpi-margem-sub').textContent='Margem '+vendFmtPct(margem);
+  document.getElementById('vend-kpi-ticket').textContent=vendFmtBRL(ticket);document.getElementById('vend-kpi-ticket-sub').textContent=v.length+' pedidos';
+  document.getElementById('vend-kpi-margem').textContent=vendFmtPct(margem);
+  document.getElementById('vend-kpi-clientes').textContent=clientes.length;document.getElementById('vend-kpi-recorrentes').textContent=recorrentes+' recorrentes';
+  document.getElementById('vend-kpi-qtd').textContent=vendFmtN(qtd);document.getElementById('vend-kpi-qtd-sub').textContent='unidades vendidas';
+  document.getElementById('vend-badge-fat').textContent=vendFmtBRL(fat);
+  document.getElementById('vend-badge-lucro').textContent='Lucro '+vendFmtBRL(lucro);
+  const mc=margem>=20?'badge-gain':margem>=10?'badge-warn':'badge-loss';document.getElementById('vend-badge-lucro').className='badge '+mc;
+}
+
+function vendUpdateGauge(){
+  const fat=vendVendasFilt.reduce((s,r)=>s+r.valorVenda,0);
+  const meta=parseFloat(document.getElementById('vend-metaInput').value)||100000;
+  const pct=vendClamp(fat/meta*100,0,100);const arcLen=188;const filled=arcLen*pct/100;
+  document.getElementById('vend-gaugeArc').setAttribute('stroke-dasharray',filled+' '+arcLen);
+  document.getElementById('vend-gaugePct').textContent=Math.round(pct)+'%';
+  document.getElementById('vend-gaugeLabel').textContent='Realizado: '+vendFmtBRL(fat);
+}
+
+function vendAggBy(field){
+  const map={};
+  vendVendasFilt.forEach(r=>{const k=r[field]||'(sem)';if(!map[k])map[k]={fat:0,lucro:0,qtd:0,count:0};map[k].fat+=r.valorVenda;map[k].lucro+=r.lucro;map[k].qtd+=r.quantidade;map[k].count++;});
+  return Object.entries(map).sort((a,b)=>b[1].fat-a[1].fat);
+}
+function vendAggByDate(){
+  const map={};
+  vendVendasFilt.forEach(r=>{const d=vendParseDate(r.data);if(!d)return;const k=(d.getMonth()+1).toString().padStart(2,'0')+'/'+d.getFullYear();if(!map[k])map[k]={fat:0,lucro:0,order:d.getFullYear()*12+d.getMonth()};map[k].fat+=r.valorVenda;map[k].lucro+=r.lucro;});
+  return Object.entries(map).sort((a,b)=>a[1].order-b[1].order);
+}
+
+const PAL=['#58a6ff','#3fb950','#d2a8ff','#e3b341','#f85149','#ffa657','#79c0ff','#a5d6ff','#8b949e','#39d353'];
+
+function vendDestroyCharts(){Object.values(vendCharts).forEach(c=>{try{c.destroy();}catch(e){}});vendCharts={};}
+
+function vendRenderCharts(){
+  if(!vendVendasFilt.length){vendDestroyCharts();return;}
+  vendDestroyCharts();
+  const defOpts={responsive:true,maintainAspectRatio:false,plugins:{legend:{labels:{color:'#8b949e',font:{size:11}}}},scales:{x:{ticks:{color:'#8b949e',font:{size:10}},grid:{color:'rgba(45,51,59,0.4)'}},y:{ticks:{color:'#8b949e',font:{size:10},callback:v=>'R$'+(v>=1000?(v/1000).toFixed(0)+'k':v)},grid:{color:'rgba(45,51,59,0.4)'}}}};
+  const byDate=vendAggByDate();
+  vendCharts.linha=new Chart(document.getElementById('vend-chartLinha'),{type:'line',data:{labels:byDate.map(([k])=>k),datasets:[{label:'Faturamento',data:byDate.map(([,v])=>v.fat),borderColor:'#58a6ff',backgroundColor:'rgba(88,166,255,0.1)',fill:true,tension:0.35,pointRadius:5,borderWidth:2.5},{label:'Lucro',data:byDate.map(([,v])=>v.lucro),borderColor:'#3fb950',backgroundColor:'rgba(63,185,80,0.1)',fill:true,tension:0.35,pointRadius:4,borderWidth:2,borderDash:[4,3]}]},options:{...defOpts,plugins:{...defOpts.plugins,tooltip:{callbacks:{label:ctx=>` ${ctx.dataset.label}: ${vendFmtBRL(ctx.raw)}`}}}}});
+  const byVend=vendAggBy('vendedor').slice(0,10);
+  vendCharts.vendedor=new Chart(document.getElementById('vend-chartVendedor'),{type:'bar',data:{labels:byVend.map(([k])=>k.length>14?k.slice(0,13)+'…':k),datasets:[{label:'Faturamento',data:byVend.map(([,v])=>v.fat),backgroundColor:PAL.map(c=>c+'bb'),borderRadius:4}]},options:{...defOpts,plugins:{...defOpts.plugins,legend:{display:false},tooltip:{callbacks:{label:ctx=>` ${vendFmtBRL(ctx.raw)}`}}}}});
+  const byCan=vendAggBy('canal').slice(0,8);
+  vendCharts.canal=new Chart(document.getElementById('vend-chartCanal'),{type:'doughnut',data:{labels:byCan.map(([k])=>k),datasets:[{data:byCan.map(([,v])=>v.fat),backgroundColor:PAL,borderWidth:2,borderColor:'#1c2128',hoverOffset:6}]},options:{responsive:true,maintainAspectRatio:false,cutout:'60%',plugins:{legend:{position:'right',labels:{color:'#8b949e',font:{size:10}}},tooltip:{callbacks:{label:ctx=>` ${vendFmtBRL(ctx.raw)}`}}}}});
+  const byProd=vendAggBy('produto').slice(0,10);
+  vendCharts.produto=new Chart(document.getElementById('vend-chartProduto'),{type:'bar',data:{labels:byProd.map(([k])=>k.length>12?k.slice(0,11)+'…':k),datasets:[{label:'Faturamento',data:byProd.map(([,v])=>v.fat),backgroundColor:'rgba(210,168,255,0.7)',borderRadius:4}]},options:{...defOpts,plugins:{...defOpts.plugins,legend:{display:false}}}});
+  const byEst=vendAggBy('estado').slice(0,15);
+  vendCharts.estado=new Chart(document.getElementById('vend-chartEstado'),{type:'bar',data:{labels:byEst.map(([k])=>k),datasets:[{label:'Faturamento',data:byEst.map(([,v])=>v.fat),backgroundColor:'rgba(255,166,87,0.75)',borderRadius:4}]},options:{...defOpts,plugins:{...defOpts.plugins,legend:{display:false}}}});
+  const byVend2=vendAggBy('vendedor').slice(0,8);
+  vendCharts.margem=new Chart(document.getElementById('vend-chartMargem'),{type:'bar',data:{labels:byVend2.map(([k])=>k.length>12?k.slice(0,11)+'…':k),datasets:[{label:'Custo',data:byVend2.map(([,v])=>v.fat-v.lucro),backgroundColor:'rgba(248,81,73,0.6)',borderRadius:3},{label:'Lucro',data:byVend2.map(([,v])=>v.lucro),backgroundColor:'rgba(63,185,80,0.7)',borderRadius:3}]},options:{...defOpts,plugins:{...defOpts.plugins},scales:{...defOpts.scales,x:{...defOpts.scales.x,stacked:true},y:{...defOpts.scales.y,stacked:true}}}});
+  vendCharts.scatter=new Chart(document.getElementById('vend-chartScatter'),{type:'scatter',data:{datasets:[{label:'Vendas',data:vendVendasFilt.slice(0,200).map(r=>({x:r.quantidade,y:r.valorVenda})),backgroundColor:'rgba(88,166,255,0.55)',pointRadius:5}]},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false},tooltip:{callbacks:{label:ctx=>` Qtd: ${ctx.parsed.x}  Valor: ${vendFmtBRL(ctx.parsed.y)}`}}},scales:{x:{ticks:{color:'#8b949e',font:{size:10}},grid:{color:'rgba(45,51,59,0.4)'},title:{display:true,text:'Quantidade',color:'#8b949e',font:{size:10}}},y:{ticks:{color:'#8b949e',font:{size:10},callback:v=>vendFmtBRL(v)},grid:{color:'rgba(45,51,59,0.4)'},title:{display:true,text:'Valor (R$)',color:'#8b949e',font:{size:10}}}}}});
+  // ABC
+  const byCliente=vendAggBy('cliente').sort((a,b)=>b[1].fat-a[1].fat);const total=byCliente.reduce((s,[,v])=>s+v.fat,0);let cum=0;
+  const data=byCliente.map(([k,v])=>{cum+=v.fat;return{label:k.length>10?k.slice(0,9)+'…':k,fat:v.fat,pct:total?cum/total*100:0};});
+  const bgColors=data.map(d=>d.pct<=80?'rgba(63,185,80,0.7)':d.pct<=95?'rgba(227,179,65,0.7)':'rgba(248,81,73,0.6)');
+  vendCharts.abc=new Chart(document.getElementById('vend-chartABC'),{type:'bar',data:{labels:data.slice(0,20).map(d=>d.label),datasets:[{label:'Faturamento',data:data.slice(0,20).map(d=>d.fat),backgroundColor:bgColors.slice(0,20),borderRadius:3,yAxisID:'y'},{label:'% Acum.',data:data.slice(0,20).map(d=>d.pct),type:'line',borderColor:'#58a6ff',fill:false,tension:0.3,pointRadius:3,yAxisID:'y2',borderWidth:2}]},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{labels:{color:'#8b949e',font:{size:10}}},tooltip:{callbacks:{label:ctx=>ctx.dataset.yAxisID==='y2'?` ${ctx.raw.toFixed(1)}%`:' '+vendFmtBRL(ctx.raw)}}},scales:{x:{ticks:{color:'#8b949e',font:{size:9},maxRotation:30},grid:{color:'rgba(45,51,59,0.3)'}},y:{ticks:{color:'#8b949e',font:{size:10},callback:v=>'R$'+(v>=1000?(v/1000).toFixed(0)+'k':v)},grid:{color:'rgba(45,51,59,0.3)'},position:'left'},y2:{ticks:{color:'#58a6ff',font:{size:10},callback:v=>v+'%'},grid:{display:false},position:'right',min:0,max:100}}}});
+}
+
+function vendRenderTable(){
+  const busca=(document.getElementById('vend-busca').value||'').toLowerCase();
+  const rows=vendVendasFilt.filter(r=>!busca||[r.vendedor,r.cliente,r.produto,r.cidade,r.estado,r.canal].some(f=>f&&f.toLowerCase().includes(busca)));
+  if(!rows.length){document.getElementById('vend-tableBody').innerHTML=`<tr><td colspan="13" style="text-align:center;padding:30px;color:var(--muted);">${vendVendasRaw.length?'📭 Nenhum resultado':'📭 Importe dados em 📂 Importar'}</td></tr>`;return;}
+  document.getElementById('vend-tableBody').innerHTML=rows.slice(0,500).map((r,i)=>{
+    const margem=r.valorVenda?(r.lucro/r.valorVenda*100):0;const mpill=margem>=20?'pill-gain':margem>=10?'pill-warn':'pill-loss';
+    return `<tr><td style="color:var(--muted);font-family:'JetBrains Mono',monospace">${i+1}</td><td>${r.data||'—'}</td><td>${r.vendedor||'—'}</td><td title="${r.cliente}">${r.cliente.length>22?r.cliente.slice(0,20)+'…':r.cliente}</td><td title="${r.produto}">${r.produto.length>18?r.produto.slice(0,16)+'…':r.produto}</td><td style="font-family:'JetBrains Mono',monospace">${vendFmtN(r.quantidade)}</td><td style="font-family:'JetBrains Mono',monospace;color:var(--accent)">${vendFmtBRL(r.valorVenda)}</td><td style="font-family:'JetBrains Mono',monospace;color:var(--muted)">${vendFmtBRL(r.custo)}</td><td style="font-family:'JetBrains Mono',monospace;color:var(--gain)">${vendFmtBRL(r.lucro)}</td><td><span class="tag-pill ${mpill}">${vendFmtPct(margem)}</span></td><td>${r.cidade||'—'}</td><td>${r.estado||'—'}</td><td>${r.canal||'—'}</td></tr>`;
+  }).join('');
+}
+
+function vendRenderRankings(){
+  const rankHtml=(rows,cols)=>rows.length?rows.map((r,i)=>`<tr><td><span class="rank-badge rank-${i<3?i+1:'n'}">${i+1}</span></td>${cols.map(c=>`<td>${c(r)}</td>`).join('')}</tr>`).join(''):`<tr><td colspan="10" style="text-align:center;padding:24px;color:var(--muted)">Sem dados</td></tr>`;
+  const byVend=vendAggBy('vendedor').slice(0,10);
+  document.getElementById('vend-rankVendedor').innerHTML=rankHtml(byVend,[([k])=>k,([,v])=>`<span style="color:var(--accent);font-family:'JetBrains Mono',monospace">${vendFmtBRL(v.fat)}</span>`,([,v])=>`<span style="color:var(--gain);font-family:'JetBrains Mono',monospace">${vendFmtBRL(v.lucro)}</span>`,([,v])=>{const m=v.fat?v.lucro/v.fat*100:0;return`<span class="tag-pill ${m>=20?'pill-gain':m>=10?'pill-warn':'pill-loss'}">${vendFmtPct(m)}</span>`;},([,v])=>v.count]);
+  const byProd=vendAggBy('produto').slice(0,10);
+  document.getElementById('vend-rankProduto').innerHTML=rankHtml(byProd,[([k])=>k,([,v])=>`<span style="color:var(--accent);font-family:'JetBrains Mono',monospace">${vendFmtBRL(v.fat)}</span>`,([,v])=>vendFmtN(v.qtd),([,v])=>vendFmtBRL(v.count?v.fat/v.count:0)]);
+  const byCli=vendAggBy('cliente').slice(0,10);
+  const ultima=(cli)=>{const ds=vendVendasFilt.filter(r=>r.cliente===cli).map(r=>vendParseDate(r.data)).filter(Boolean);return ds.length?new Date(Math.max(...ds)).toLocaleDateString('pt-BR'):'—';};
+  document.getElementById('vend-rankCliente').innerHTML=rankHtml(byCli,[([k])=>k.length>22?k.slice(0,20)+'…':k,([,v])=>`<span style="color:var(--accent);font-family:'JetBrains Mono',monospace">${vendFmtBRL(v.fat)}</span>`,([,v])=>v.count,([k])=>ultima(k)]);
+  const byCid=vendAggBy('cidade').slice(0,10);
+  const ufByCidade=(cidade)=>{const r=vendVendasFilt.find(r=>r.cidade===cidade);return r?r.estado:'—';};
+  document.getElementById('vend-rankCidade').innerHTML=rankHtml(byCid,[([k])=>k,([k])=>ufByCidade(k),([,v])=>`<span style="color:var(--accent);font-family:'JetBrains Mono',monospace">${vendFmtBRL(v.fat)}</span>`,([,v])=>v.count]);
+}
+
+// Vend Upload
+const vendDropZone=document.getElementById('vend-dropZone'),vendFileInput=document.getElementById('vend-fileInput');
+vendFileInput.addEventListener('change',e=>vendHandleFile(e.target.files[0]));
+vendDropZone.addEventListener('dragover',e=>{e.preventDefault();vendDropZone.classList.add('drag-over');});
+vendDropZone.addEventListener('dragleave',()=>vendDropZone.classList.remove('drag-over'));
+vendDropZone.addEventListener('drop',e=>{e.preventDefault();vendDropZone.classList.remove('drag-over');vendHandleFile(e.dataTransfer.files[0]);});
+
+function vendSetMode(mode){
+  vendImportMode=mode;const isSSW=mode==='ssw';
+  document.getElementById('vend-modeSSW').className=isSSW?'btn-filter':'btn-filter secondary';document.getElementById('vend-modeSSW').style.background=isSSW?'var(--accent)':'';document.getElementById('vend-modeSSW').style.color=isSSW?'#fff':'';
+  document.getElementById('vend-modeXLS').className=!isSSW?'btn-filter':'btn-filter secondary';document.getElementById('vend-modeXLS').style.background=!isSSW?'var(--accent)':'';document.getElementById('vend-modeXLS').style.color=!isSSW?'#fff':'';
+  document.getElementById('vend-dropIcon').textContent=isSSW?'📋':'📊';document.getElementById('vend-dropMain').textContent=isSSW?'Arraste o arquivo SSW aqui':'Arraste a planilha aqui';document.getElementById('vend-dropFormats').textContent=isSSW?'.sswweb':'XLSX · XLS · CSV';
+  vendFileInput.accept=isSSW?'.sswweb':'.xlsx,.xls,.csv';
+  vendSswParsed=[];vendParsedRows=[];vendSheetHeaders=[];
+  document.getElementById('vend-sswPreviewCard').style.display='none';document.getElementById('vend-mappingCard').style.display='none';document.getElementById('vend-btnApply').disabled=true;document.getElementById('vend-fileInfo').classList.remove('show');document.getElementById('vend-parseStatus').className='parse-status';
+}
+
+function vendHandleFile(file){
+  if(!file)return;const ext=file.name.split('.').pop().toLowerCase();
+  document.getElementById('vend-fileInfo').classList.add('show');document.getElementById('vend-fileName').textContent=file.name;document.getElementById('vend-fileSize').textContent=(file.size/1024).toFixed(1)+' KB';
+  if(ext==='sswweb'||vendImportMode==='ssw'){
+    vendSetParseStatus('info','⏳ Lendo arquivo SSW…');
+    const reader=new FileReader();
+    reader.onload=e=>{
+      try{vendSswParsed=vendParseSSW(e.target.result);if(!vendSswParsed.length){vendSetParseStatus('err','❌ Nenhum registro CTRC encontrado.');return;}vendSetParseStatus('ok',`✅ ${vendSswParsed.length} CTRCs extraídos.`);vendBuildSSWPreview();document.getElementById('vend-btnApply').disabled=false;}
+      catch(err){vendSetParseStatus('err','❌ Erro: '+err.message);}
+    };reader.readAsText(file,'latin1');return;
+  }
+  if(!['xlsx','xls','csv'].includes(ext)){vendSetParseStatus('err','❌ Formato não suportado.');return;}
+  vendSetParseStatus('info','⏳ Lendo planilha…');
+  const reader=new FileReader();
+  reader.onload=e=>{
+    try{const wb=XLSX.read(e.target.result,{type:'array',cellDates:false});const ws=wb.Sheets[wb.SheetNames[0]];const raw=XLSX.utils.sheet_to_json(ws,{header:1,defval:''});if(raw.length<2){vendSetParseStatus('err','❌ Planilha vazia.');return;}vendSheetHeaders=raw[0].map(h=>String(h).trim());vendParsedRows=raw.slice(1).filter(row=>row.some(c=>c!==''));vendSetParseStatus('ok',`✅ ${vendParsedRows.length} linhas. Configure o mapeamento.`);vendBuildMappingUI();document.getElementById('vend-btnApply').disabled=false;}
+    catch(err){vendSetParseStatus('err','❌ Erro: '+err.message);}
+  };reader.readAsArrayBuffer(file);
+}
+
+function vendParseSSW(text){
+  const lines=text.split(/\r?\n/);const records=[];let curVend='',curEquipe='',curCli='',curCNPJ='',ref='';
+  // posições de coluna do layout ANALITICO (ssw0343), derivadas do separador
+  // ---------+---------+--------+------------+--------+--------+--------+------------+--------+-------+------------+------+----------+----------+----------+----------
+  const COL=[0,10,20,29,42,51,60,69,82,91,99,112,119,130,141,152,162];
+  const pBR=s=>{s=(s||'').trim();if(!s||s==='-')return 0;return parseFloat(s.replace(/\./g,'').replace(',','.'))||0;};
+  const cut=(line,i)=>line.slice(COL[i],COL[i+1]).trim();
+  const refMatch=text.match(/REFERENCIA:\s*(\d{2}\/\d{2}\/\d{2,4})/);if(refMatch)ref=refMatch[1];
+  for(let i=0;i<lines.length;i++){const line=lines[i];
+    const vendMatch=line.match(/^VENDEDOR:\s*\d+\s+\S+\s+(.+?)(?:\s*-\s*EQUIPE:\s*(\S+))?\s*$/);
+    if(vendMatch){curVend=vendMatch[1].trim();curEquipe=vendMatch[2]?vendMatch[2].trim():curEquipe;curCli='';curCNPJ='';continue;}
+    const cliMatch=line.match(/^([A-Z0-9][A-Z0-9 .,&'-]{2,}?)\s+-\s+(\d{14})\s+-\s+MANUT:/);if(cliMatch){curCli=cliMatch[1].trim();curCNPJ=cliMatch[2].trim();continue;}
+    // linhas de detalhe (ANALITICO) sempre têm 162 colunas e começam com "NORMAL"
+    if(line.length===162 && /^NORMAL\s/.test(line)){
+      const tabela=cut(line,1),vcto=cut(line,2),ctrc=cut(line,3),emissao=cut(line,4),liquidacao=cut(line,5);
+      const peso=pBR(cut(line,6)),valorFrete=pBR(cut(line,7)),descNTC=pBR(cut(line,9)),baseCalc=pBR(cut(line,10)),
+            comissPct=pBR(cut(line,11)),comConq=pBR(cut(line,12)),comManu=pBR(cut(line,13)),comManu2=pBR(cut(line,14)),comTotal=pBR(cut(line,15));
+      records.push({referencia:ref,vendedor:curVend,equipe:curEquipe,cliente:curCli,cnpj:curCNPJ,tabela,fatura:tabela!=='-'?tabela:'',vcto,ctrc,emissao,liquidacao,peso,valorFrete,descNTC,baseCalc,comissPct,comConq,comManu,comManu2,comTotal,data:emissao,produto:ctrc,quantidade:peso,valorVenda:valorFrete,custo:valorFrete-baseCalc,lucro:comTotal,cidade:'',estado:'',canal:curEquipe});
+      continue;
+    }
+  }return records;
+}
+
+function vendBuildSSWPreview(){
+  document.getElementById('vend-sswPreviewCard').style.display='block';
+  const tbl=document.getElementById('vend-sswPreviewTable');
+  const cols=['Vendedor','Cliente','CTRC','Emissão','Peso (Kg)','Vlr Frete','Base Cálc','Com Total'];
+  const head=`<tr style="background:var(--surface)">${cols.map(c=>`<th style="padding:5px 8px;text-align:left;font-size:10px;color:var(--muted);border-bottom:1px solid var(--border);white-space:nowrap;">${c}</th>`).join('')}</tr>`;
+  const body=vendSswParsed.slice(0,8).map(r=>`<tr>${[r.vendedor.length>22?r.vendedor.slice(0,20)+'…':r.vendedor,r.cliente.length>20?r.cliente.slice(0,18)+'…':r.cliente,r.ctrc,r.emissao,r.peso.toLocaleString('pt-BR'),vendFmtBRL(r.valorFrete),vendFmtBRL(r.baseCalc),vendFmtBRL(r.comTotal)].map(v=>`<td style="padding:4px 8px;font-size:10px;border-bottom:1px solid rgba(45,51,59,0.4);white-space:nowrap;">${v}</td>`).join('')}</tr>`).join('');
+  tbl.innerHTML=`<thead>${head}</thead><tbody>${body}<tr><td colspan="8" style="padding:6px 8px;font-size:10px;color:var(--muted);text-align:center;">… ${vendSswParsed.length} registros no total</td></tr></tbody>`;
+}
+
+function vendBuildMappingUI(){
+  document.getElementById('vend-mappingCard').style.display='block';
+  const grid=document.getElementById('vend-mappingGrid');
+  const syns={data:['data','date','dt','dia'],vendedor:['vendedor','seller','vend'],cliente:['cliente','customer','client'],produto:['produto','product','item'],quantidade:['quantidade','qty','qtd'],valorVenda:['valor venda','valor','venda','receita','faturamento','total'],custo:['custo','cost'],lucro:['lucro','profit'],cidade:['cidade','city'],estado:['estado','uf'],canal:['canal','channel']};
+  const autoMap={};
+  vendSheetHeaders.forEach((h,i)=>{const hl=h.toLowerCase().replace(/[^a-z0-9 ]/g,'').trim();CAMPOS.forEach(campo=>{if(syns[campo]&&syns[campo].some(s=>hl.includes(s))&&!autoMap[campo])autoMap[campo]=i;});});
+  grid.innerHTML=CAMPOS.map((campo,ci)=>{const opts=vendSheetHeaders.map((h,i)=>`<option value="${i}" ${autoMap[campo]===i?'selected':''}>${h||'(col '+(i+1)+')'}</option>`).join('');return`<div class="mapping-row"><span>${LABELS[ci]}</span><select class="mapping-select" id="vend-map-${campo}"><option value="">—</option>${opts}</select></div>`;}).join('');
+  const pw=document.getElementById('vend-previewTableWrap'),pt=document.getElementById('vend-previewTable');pw.style.display='block';
+  const headRow=`<tr style="background:var(--surface)">${vendSheetHeaders.map(h=>`<th style="padding:5px 8px;text-align:left;font-size:10px;color:var(--muted);border-bottom:1px solid var(--border);white-space:nowrap;">${h}</th>`).join('')}</tr>`;
+  const bodyRows=vendParsedRows.slice(0,5).map(row=>`<tr>${row.map(c=>`<td style="padding:4px 8px;font-size:10px;border-bottom:1px solid rgba(45,51,59,0.4);white-space:nowrap;">${c}</td>`).join('')}</tr>`).join('');
+  pt.innerHTML=`<thead>${headRow}</thead><tbody>${bodyRows}</tbody>`;
+}
+
+function vendSetParseStatus(cls,msg){const el=document.getElementById('vend-parseStatus');el.className='parse-status '+cls;el.textContent=msg;}
+
+async function vendApplyUpload(){
+  const btn=document.getElementById('vend-btnApply');btn.disabled=true;btn.innerHTML='<span class="spinner"></span> Salvando…';vendSetParseStatus('info','☁ Enviando para Firebase…');
+  let registros=[];
+  if(vendImportMode==='ssw'&&vendSswParsed.length){
+    registros=vendSswParsed.map(r=>({data:r.data,vendedor:r.vendedor,cliente:r.cliente,produto:r.ctrc,quantidade:r.peso,valorVenda:r.valorFrete,custo:r.custo,lucro:r.comTotal,cidade:r.cidade||'',estado:r.estado||'',canal:r.equipe,cnpj:r.cnpj,fatura:r.fatura,vcto:r.vcto,baseCalc:r.baseCalc,comissPct:r.comissPct,referencia:r.referencia})).filter(r=>r.vendedor&&r.valorVenda);
+  } else {
+    const map={};CAMPOS.forEach(c=>{const el=document.getElementById('vend-map-'+c);if(el&&el.value!=='')map[c]=parseInt(el.value);});
+    registros=vendParsedRows.map(row=>{const r={};CAMPOS.forEach(campo=>{if(map[campo]!==undefined){let val=row[map[campo]];if(['quantidade','valorVenda','custo','lucro'].includes(campo)){val=typeof val==='number'?val:parseFloat(String(val).replace(',','.'))||0;}else if(campo==='data'){const d=typeof val==='number'?new Date(Math.round((val-25569)*86400*1000)):vendParseDate(String(val));val=d?d.toLocaleDateString('pt-BR'):String(val);}else{val=String(val).trim();}r[campo]=val;}else{r[campo]=['quantidade','valorVenda','custo','lucro'].includes(campo)?0:'';}});if(!map['lucro']&&map['valorVenda']&&map['custo'])r.lucro=r.valorVenda-r.custo;return r;}).filter(r=>r.vendedor||r.cliente||r.valorVenda);
+  }
+  try{
+    await vendFbReady;const saved=await window.__fbVendas.salvarVendas(registros);
+    vendSetParseStatus('ok',`✅ ${saved} registros salvos!`);toast('✅ '+saved+' registros importados!','var(--gain)');btn.innerHTML='✅ Importado';
+    await vendLoadFromFirebase();document.getElementById('vend-btnClear').style.display='inline-flex';
+  }catch(err){vendSetParseStatus('err','❌ Erro: '+err.message);btn.disabled=false;btn.innerHTML='☁ Importar para Firebase';toast('❌ Erro ao salvar','var(--loss)');}
+}
+
+async function vendClearFirebase(){
+  if(!confirm('⚠️ Isso vai apagar TODOS os registros de vendas do Firebase. Confirmar?'))return;
+  const btn=document.getElementById('vend-btnClear');btn.disabled=true;btn.textContent='⏳ Apagando…';
+  try{await vendFbReady;await window.__fbVendas.limparVendas();vendVendasRaw=[];vendVendasFilt=[];vendRenderKPIs();vendRenderCharts();vendRenderTable();vendPopulateFilters();toast('🗑️ Dados apagados','var(--warn)');btn.style.display='none';vendFbStatus('ok','☁ 0 registros');document.getElementById('vend-dash-rec').textContent='0 registros';}
+  catch(e){toast('❌ Erro: '+e.message,'var(--loss)');}finally{btn.disabled=false;btn.textContent='🗑️ Limpar Firebase';}
+}
+
+function vendSelectExport(mode){vendExportMode=mode;document.querySelectorAll('#main-vendedores .export-card').forEach(c=>c.classList.remove('selected'));document.getElementById('vend-opt-'+mode).classList.add('selected');}
+
+async function vendExportPDF(){
+  if(!vendVendasFilt.length){toast('Sem dados para exportar','var(--loss)');return;}
+  const{jsPDF}=window.jspdf;
+  const btn=document.getElementById('vend-btnExport');btn.disabled=true;
+  const isWide=vendExportMode==='wide';const pdf=new jsPDF({orientation:isWide?'landscape':'portrait',unit:'mm',format:'a4'});
+  const W=pdf.internal.pageSize.getWidth(),H=pdf.internal.pageSize.getHeight(),margin=12,contentW=W-margin*2;
+  const bgPage=()=>{pdf.setFillColor(13,17,23);pdf.rect(0,0,W,H,'F');};bgPage();let y=12;
+  const setP=(p,t)=>{document.getElementById('vend-progressFill').style.width=p+'%';const m=document.getElementById('vend-exportMsg');m.className='export-msg show';m.textContent=t;};
+  document.getElementById('vend-progressBar').classList.add('show');
+  setP(5,'📄 Preparando PDF…');await sleep(80);
+  pdf.setFont('helvetica','bold');pdf.setFontSize(14);pdf.setTextColor(230,237,243);pdf.text('Omega 7 — Dashboard Comercial de Vendedores',margin,y);y+=6;
+  pdf.setFont('helvetica','normal');pdf.setFontSize(8);pdf.setTextColor(139,148,158);pdf.text('Gerado em '+new Date().toLocaleString('pt-BR')+'   ·   '+vendVendasFilt.length+' registros filtrados',margin,y);y+=8;
+  pdf.setDrawColor(45,51,59);pdf.line(margin,y,W-margin,y);y+=6;
+  if(document.getElementById('vend-chk-kpis').checked){
+    const fat=vendVendasFilt.reduce((s,r)=>s+r.valorVenda,0),lucro=vendVendasFilt.reduce((s,r)=>s+r.lucro,0),margem=fat?lucro/fat*100:0,ticket=vendVendasFilt.length?fat/vendVendasFilt.length:0,clientes=new Set(vendVendasFilt.map(r=>r.cliente)).size;
+    const kpis=[{label:'Faturamento',val:vendFmtBRL(fat),color:[88,166,255]},{label:'Lucro Bruto',val:vendFmtBRL(lucro),color:[63,185,80]},{label:'Margem %',val:vendFmtPct(margem),color:[227,179,65]},{label:'Ticket Médio',val:vendFmtBRL(ticket),color:[210,168,255]},{label:'Clientes',val:String(clientes),color:[255,166,87]},{label:'Qtd Vendas',val:String(vendVendasFilt.length),color:[57,211,83]}];
+    const kW=(contentW-10)/(isWide?6:3),cols=isWide?6:3,rows2=Math.ceil(kpis.length/cols);
+    for(let ri=0;ri<rows2;ri++){for(let ci=0;ci<cols;ci++){const k=kpis[ri*cols+ci];if(!k)continue;const kx=margin+ci*(kW+2),ky=y+ri*16;pdf.setFillColor(28,33,40);pdf.roundedRect(kx,ky,kW,14,2,2,'F');pdf.setDrawColor(45,51,59);pdf.roundedRect(kx,ky,kW,14,2,2,'S');pdf.setFont('helvetica','normal');pdf.setFontSize(6.5);pdf.setTextColor(139,148,158);pdf.text(k.label,kx+3,ky+4.5);pdf.setFont('helvetica','bold');pdf.setFontSize(9);pdf.setTextColor(...k.color);pdf.text(k.val,kx+3,ky+10.5);}}
+    y+=rows2*16+6;
+  }
+  if(document.getElementById('vend-chk-charts').checked){
+    setP(35,'📈 Capturando gráficos…');await sleep(100);
+    const cans=['vend-chartLinha','vend-chartVendedor','vend-chartCanal','vend-chartProduto'];const titles=['Evolução Faturamento','Top Vendedores','Canal de Venda','Top Produtos'];
+    const cW=(contentW-4)/2,cH=isWide?52:46;
+    for(let i=0;i<cans.length;i++){const canvas=document.getElementById(cans[i]);if(!canvas)continue;const img=canvas.toDataURL('image/png',0.9);const cx=margin+(i%2)*(cW+4),cy=y+Math.floor(i/2)*(cH+5);if(cy+cH>H-20){pdf.addPage();bgPage();y=12;}pdf.setFillColor(28,33,40);pdf.roundedRect(cx,cy,cW,cH,2,2,'F');pdf.setDrawColor(45,51,59);pdf.roundedRect(cx,cy,cW,cH,2,2,'S');pdf.setFont('helvetica','bold');pdf.setFontSize(7);pdf.setTextColor(230,237,243);pdf.text(titles[i],cx+3,cy+5);pdf.addImage(img,'PNG',cx+2,cy+7,cW-4,cH-9);setP(35+(i+1)*7,`📊 Gráfico ${i+1}/4…`);await sleep(60);}
+    y+=(cH+5)*2+6;
+  }
+  if(document.getElementById('vend-chk-table').checked){
+    setP(80,'📋 Tabela de vendas…');await sleep(60);
+    if(y+20>H-18){pdf.addPage();bgPage();y=12;}
+    pdf.setFont('helvetica','bold');pdf.setFontSize(9);pdf.setTextColor(230,237,243);pdf.text('Detalhamento de Vendas',margin,y);y+=5;
+    const tcols=isWide?[{label:'Data',w:18},{label:'Vendedor',w:36},{label:'Cliente',w:40},{label:'Produto',w:36},{label:'Qtd',w:12},{label:'Valor',w:28},{label:'Lucro',w:28},{label:'Margem',w:16},{label:'UF',w:10},{label:'Canal',w:24}]:[{label:'Data',w:18},{label:'Vendedor',w:32},{label:'Cliente',w:38},{label:'Produto',w:32},{label:'Valor',w:26},{label:'Lucro',w:24},{label:'Margem',w:16},{label:'Canal',w:20}];
+    const tW=tcols.reduce((s,c)=>s+c.w,0);
+    const drawTHead=()=>{pdf.setFillColor(22,27,34);pdf.rect(margin,y,tW,6,'F');pdf.setFont('helvetica','bold');pdf.setFontSize(6);pdf.setTextColor(139,148,158);let cx=margin;tcols.forEach(c=>{pdf.text(c.label,cx+1,y+4.2);cx+=c.w;});y+=6;};drawTHead();
+    vendVendasFilt.slice(0,300).forEach((r,i)=>{if(y+5>H-14){pdf.addPage();bgPage();y=12;drawTHead();}if(i%2===0){pdf.setFillColor(20,25,32);pdf.rect(margin,y,tW,5,'F');}pdf.setFont('helvetica','normal');pdf.setFontSize(5.8);pdf.setTextColor(230,237,243);const m=r.valorVenda?r.lucro/r.valorVenda*100:0;const row=isWide?[r.data,r.vendedor,r.cliente,r.produto,vendFmtN(r.quantidade),vendFmtBRL(r.valorVenda),vendFmtBRL(r.lucro),vendFmtPct(m),r.estado,r.canal]:[r.data,r.vendedor,r.cliente,r.produto,vendFmtBRL(r.valorVenda),vendFmtBRL(r.lucro),vendFmtPct(m),r.canal];let rx=margin;row.forEach((v,vi)=>{const vl=String(v||'—');pdf.text(vl.length>20?vl.slice(0,18)+'…':vl,rx+1,y+3.5);rx+=tcols[vi].w;});pdf.setDrawColor(45,51,59);pdf.line(margin,y+5,margin+tW,y+5);y+=5;});
+  }
+  const tp=pdf.internal.getNumberOfPages();for(let p=1;p<=tp;p++){pdf.setPage(p);if(document.getElementById('vend-chk-footer').checked){pdf.setFillColor(22,27,34);pdf.rect(0,H-10,W,10,'F');pdf.setFont('helvetica','normal');pdf.setFontSize(6.5);pdf.setTextColor(139,148,158);pdf.text('Omega 7 Transportes e Logística · Dashboard Comercial de Vendedores',margin,H-4);pdf.text(`Pág. ${p} / ${tp}`,W-margin-14,H-4);}}
+  setP(97,'💾 Salvando…');await sleep(80);
+  pdf.save(`Omega7_Vendedores_${new Date().toLocaleDateString('pt-BR').replace(/\//g,'-')}.pdf`);
+  setP(100,'✅ PDF baixado!');document.getElementById('vend-exportMsg').style.color='var(--gain)';btn.disabled=false;
+}
+
+// ═══════════════════════════════════════════════════════
+//  INIT
+// ═══════════════════════════════════════════════════════
+// Render OMG7 imediatamente com dados embutidos
+omgRenderDashboard();
+
+// Render Vendedores empty state
+document.getElementById('vend-tableBody').innerHTML=`<tr><td colspan="13" style="text-align:center;padding:40px;color:var(--muted);"><div style="font-size:32px;margin-bottom:8px">📊</div><div style="font-size:14px;font-weight:600;color:var(--text);margin-bottom:4px">Nenhum dado importado ainda</div><div style="font-size:12px">Vá em <strong>📂 Importar</strong> para fazer upload da planilha de vendas</div></td></tr>`;
+
+// Firebase OMG7
+const omgFirebaseInitPromise = new Promise(resolve => {
+  if (window.__firebaseReady) resolve();
+  else window.__firebaseResolve = resolve;
+});
+(async () => {
+  try {
+    await omgFirebaseInitPromise;
+    navFbStatus('loading','Carregando…');
+    const data = await window.__firebase.carregar();
+    if (data && data.clients && data.clients.length > 0) {
+      omgClients=data.clients;omgPeriods=data.periods||omgPeriods;omgMeta=data.meta||omgMeta;omgTotals=data.totals||omgTotals;
+      omgRenderDashboard();navFbStatus('ok','☁ Dados da nuvem');
+    } else {
+      await window.__firebase.salvar({clients:omgClients,periods:omgPeriods,meta:omgMeta,totals:omgTotals});
+      navFbStatus('ok','☁ Dados locais salvos');
+    }
+  } catch(err) { navFbStatus('err','✗ Offline'); }
+})();
+
+// Firebase Vendedores
+vendLoadFromFirebase();
+
+// ══════════════════════════════════════
+//  LOGIN
+// ══════════════════════════════════════
+function togglePass(){
+  const inp=document.getElementById('login-pass');
+  const eye=document.getElementById('login-eye');
+  if(inp.type==='password'){
+    inp.type='text';
+    eye.innerHTML='<path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"/><line x1="1" y1="1" x2="23" y2="23"/>';
+  } else {
+    inp.type='password';
+    eye.innerHTML='<path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/>';
+  }
+}
+
+function doLogin(e){
+  e.preventDefault();
+  const u=document.getElementById('login-user').value.trim();
+  const p=document.getElementById('login-pass').value;
+  const err=document.getElementById('login-error');
+  if(u==='admin' && p==='admin'){
+    err.textContent='';
+    sessionStorage.setItem('omg7_auth','1');
+    document.getElementById('login-overlay').classList.add('hidden');
+  } else {
+    err.textContent='Usuário ou senha inválidos.';
+  }
+  return false;
+}
+
+// Mantém logado durante a sessão do navegador
+if(sessionStorage.getItem('omg7_auth')==='1'){
+  document.getElementById('login-overlay').classList.add('hidden');
+}
+
+</script>
+</body>
+</html>
